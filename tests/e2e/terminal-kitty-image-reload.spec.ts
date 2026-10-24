@@ -28,6 +28,28 @@ test('Kitty Unicode images survive renderer reload without producer retransmissi
   if (!ptyId) {
     throw new Error('Missing test PTY')
   }
+  const cachedImages = () =>
+    orcaPage.evaluate(async () => {
+      const db = await new Promise<IDBDatabase | null>((resolve) => {
+        const request = indexedDB.open('orca-terminal-kitty-replay')
+        request.onupgradeneeded = () => request.transaction?.abort()
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => resolve(null)
+      })
+      if (!db) {
+        return 0
+      }
+      try {
+        return await new Promise<number>((resolve, reject) => {
+          const request = db.transaction('images').objectStore('images').count()
+          request.onsuccess = () => resolve(request.result)
+          request.onerror = () => reject(request.error)
+        })
+      } finally {
+        db.close()
+      }
+    })
+  expect(await cachedImages()).toBe(0)
   const producer = testInfo.outputPath('kitty-image.cjs')
   const payload = inlineImagePayload(true)
   const kittyOnly = `\x1bc${payload.slice(payload.indexOf('Kitty placeholders:'))}`
@@ -55,26 +77,7 @@ test('Kitty Unicode images survive renderer reload without producer retransmissi
     return orange
   }
   await expect.poll(() => imagePixels('before-reload')).toBeGreaterThan(1000)
-  await expect
-    .poll(() =>
-      orcaPage.evaluate(async () => {
-        const db = await new Promise<IDBDatabase>((resolve, reject) => {
-          const request = indexedDB.open('orca-terminal-kitty-replay')
-          request.onsuccess = () => resolve(request.result)
-          request.onerror = () => reject(request.error)
-        })
-        try {
-          return await new Promise<number>((resolve, reject) => {
-            const request = db.transaction('images').objectStore('images').count()
-            request.onsuccess = () => resolve(request.result)
-            request.onerror = () => reject(request.error)
-          })
-        } finally {
-          db.close()
-        }
-      })
-    )
-    .toBeGreaterThan(0)
+  await expect.poll(cachedImages).toBeGreaterThan(0)
   for (let attempt = 0; attempt < 3; attempt++) {
     await orcaPage.reload()
     await waitForSessionReady(orcaPage)

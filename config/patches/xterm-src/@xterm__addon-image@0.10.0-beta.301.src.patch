@@ -614,7 +614,7 @@ index 04328420c2bae02010bb4c9adb3fd341aed56c0c..fa945fd496a75acda31501b06a808c5c
    layer: ImageLayer;
    zIndex: number;
 diff --git a/src/kitty/KittyGraphicsHandler.ts b/src/kitty/KittyGraphicsHandler.ts
-index de889dfff75d9ecc8ab47a025e6989ffe75bb202..5902247ada14658b136a6fda53c11d04f4d52540 100644
+index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f4a79793a 100644
 --- a/src/kitty/KittyGraphicsHandler.ts
 +++ b/src/kitty/KittyGraphicsHandler.ts
 @@ -7,6 +7,7 @@ import { IDisposable } from '@xterm/xterm';
@@ -1071,11 +1071,11 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..5902247ada14658b136a6fda53c11d04
 +      // Replay is optional; a failed cache must not interrupt terminal output.
 +    } finally {
 +      this._pendingRecovery--;
-+      this._renderer.refreshAll();
-+      if (generation !== this._generation && this._missingImages.get(id) === generation) {
++      if (this._missingImages.get(id) === generation) {
 +        this._missingImages.delete(id);
-+        this._renderer.refreshAll();
++        if (generation === this._generation) this._restoredMissingInViewport.add(id);
 +      }
++      this._renderer.refreshAll();
 +    }
 +  }
 +

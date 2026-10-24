@@ -161,6 +161,57 @@ it('recovers again after a restored encoded payload is evicted by the byte budge
   }
 })
 
+it.each(['absent', 'rejected', 'wrong id', 'oversized'])(
+  'retries a %s replay lookup after a viewport change without polling the same viewport',
+  async (failure) => {
+    let snapshot
+    const first = createPlaceholderTerminal({
+      onKittyImageChanged: (_id, image) => {
+        if (image) {
+          snapshot = image
+        }
+      }
+    })
+    await writeKitty(first.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+    first.terminal.dispose()
+    const read = vi
+      .fn(async () => snapshot)
+      .mockImplementationOnce(async () => {
+        if (failure === 'rejected') {
+          throw new Error('temporary cache failure')
+        }
+        if (failure === 'absent') {
+          return undefined
+        }
+        return {
+          ...snapshot,
+          image: {
+            ...snapshot.image,
+            ...(failure === 'wrong id'
+              ? { id: 8 }
+              : { data: new Blob([new Uint8Array(9 * 1024 * 1024)]) })
+          }
+        }
+      })
+    const h = createPlaceholderTerminal({ readKittyImage: read })
+    try {
+      await write(h.terminal, placeholderCells(7))
+      for (let frame = 0; frame < 5; frame++) {
+        render(h)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(h.kitty.getImage(7)).toBeUndefined()
+      await write(h.terminal, '\r')
+      render(h)
+      await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+      expect(read).toHaveBeenCalledTimes(2)
+    } finally {
+      h.terminal.dispose()
+    }
+  }
+)
+
 it('bounds recovery when visible prototypes exceed the decoded-pixel budget', async () => {
   const h = createPlaceholderTerminal()
   try {
