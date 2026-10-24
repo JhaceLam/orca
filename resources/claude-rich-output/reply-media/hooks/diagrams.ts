@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface } from 'claude-code'
 import type { Diagram } from '../types'
-import { BLOCK, classify } from './blocks'
+import { splitBlocks, classify } from './blocks'
 import type { Script } from './blocks'
 import { run } from './render-process'
 
@@ -25,7 +25,10 @@ export async function render(
 ) {
   const cwd = await $.session.cwd()
 
-  for (const [block] of text.matchAll(BLOCK)) {
+  for (const [index, block] of splitBlocks(text).entries()) {
+    if (index % 2 === 0) {
+      continue
+    }
     const job = classify(block, drawn)
     // An image or a video is read again each time it is shown: the file
     // behind an unchanged path may be a new one.

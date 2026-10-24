@@ -3,7 +3,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Diagram, Frames } from '../types'
-import { KINDS, forms, hash, BLOCK, classify } from './blocks'
+import { KINDS, forms, hash, splitBlocks, classify } from './blocks'
 import { render } from './diagrams'
 
 // Atom addresses must be file-local for the hook scanner; the renderer uses the same key.
@@ -172,7 +172,9 @@ export const register: Register = (on, options) => {
     const appended = await next(e)
     const content = appended.message?.content
     if (
-      !content?.some((block) => typeof block.text === 'string' && block.text.search(BLOCK) !== -1)
+      !content?.some(
+        (block) => typeof block.text === 'string' && splitBlocks(block.text).length > 1
+      )
     ) {
       return appended
     }
@@ -216,7 +218,11 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
-    if (e.surface !== 'terminal' || e.props.text.search(BLOCK) === -1) {
+    if (e.surface !== 'terminal') {
+      return next(e)
+    }
+    const blocks = splitBlocks(e.props.text)
+    if (blocks.length === 1) {
       return next(e)
     }
 
@@ -227,7 +233,7 @@ export const register: Register = (on, options) => {
       | { block: string; alt: string; error: string }
     )[] = []
     let text = ''
-    for (const [index, part] of e.props.text.split(BLOCK).entries()) {
+    for (const [index, part] of blocks.entries()) {
       // A kind switched off keeps its block as text, drawn before or not.
       let outcome = index % 2 === 1 && classify(part, drawn) !== undefined ? known[part] : undefined
       // The temp folder is swept after some days. The block is text again
@@ -434,13 +440,11 @@ export const register: Register = (on, options) => {
     const { Text } = $.ui.resolve(e)
     const block = await read($, zoomed)
     const diagram = block === null ? undefined : (await read($, diagrams))[block]
-    if (
-      e.surface !== 'terminal' ||
-      block === null ||
-      !diagram ||
-      'error' in diagram ||
-      (await isGone($, diagram.file))
-    ) {
+    const source =
+      e.surface !== 'terminal' || block === null || !diagram || 'error' in diagram
+        ? undefined
+        : await imageSource($, diagram.file).catch(() => undefined)
+    if (e.surface !== 'terminal' || !source || block === null || !diagram || 'error' in diagram) {
       return <Text dimColor>No picture to show.</Text>
     }
 
@@ -457,7 +461,7 @@ export const register: Register = (on, options) => {
     return (
       <Box>
         <Image
-          source={await imageSource($, diagram.file)}
+          source={source}
           columns={Math.max(1, columns)}
           rows={Math.max(1, isTooTall ? tall : rows)}
           alt={classify(block, drawn)?.source ?? block}

@@ -60,15 +60,56 @@ export const hash = (text: string) =>
     [...text].reduce((sum, char) => (Math.imul(sum, 31) + char.charCodeAt(0)) | 0, 0) >>> 0
   ).toString(36)
 
-// What a reply holds on lines of its own that may become a picture: a code
-// fence, a `$$` formula, an image. Every fence is matched, drawn or not, so
-// that an example of a formula or an image inside one is left alone. One
-// capture group, so String.split alternates text, block, text, ...
-// ponytail: fences of exactly three backticks; a longer fence that holds a
-// shorter one is cut at the inner close and stays text. Count the ticks if
-// nested fences start to matter.
-export const BLOCK =
-  /^(```[^\n]*\n[\s\S]*?\n```[ \t]*|\$\$[ \t]*\n[\s\S]*?\n\$\$[ \t]*|!\[[^\]\n]*\]\([^)\n]+\)[ \t]*)$/gm
+const FENCE = /^([ \t]*)(`{3,}|~{3,})([^\n]*)$/
+const FORMULA = /^\$\$[ \t\r]*$/
+const IMAGE = /^!\[[^\]\n]*\]\([^)\n]+\)[ \t\r]*$/
+
+const closesFence = (line: string, marker: string) => {
+  const run = FENCE.exec(line)?.[2] ?? ''
+  return run[0] === marker[0] && run.length >= marker.length && line.trim() === run
+}
+
+/** Alternating text and closed blocks; every fence shields its literal contents. */
+export function splitBlocks(text: string): string[] {
+  const parts: string[] = []
+  const lines = text.split('\n')
+  let position = 0
+  let cursor = 0
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? ''
+    const opening = FENCE.exec(line)?.[2]
+    let end = index
+    if (opening !== undefined || FORMULA.test(line)) {
+      end++
+      while (
+        end < lines.length &&
+        !(opening === undefined
+          ? FORMULA.test(lines[end] ?? '')
+          : closesFence(lines[end] ?? '', opening))
+      ) {
+        end++
+      }
+      if (end === lines.length) {
+        break
+      }
+    } else if (!IMAGE.test(line)) {
+      position += line.length + 1
+      continue
+    }
+
+    const start = position
+    for (let current = index; current <= end; current++) {
+      position += (lines[current]?.length ?? 0) + 1
+    }
+    parts.push(text.slice(cursor, start), text.slice(start, position - 1))
+    cursor = position - 1
+    index = end
+  }
+
+  parts.push(text.slice(cursor))
+  return parts
+}
 
 /**
  * The renderer script that draws a block and what that script reads, or
@@ -81,17 +122,29 @@ export function classify(block: string, drawn: ReadonlySet<Script>) {
 }
 
 function kindOf(block: string): { script: Script; source: string } | undefined {
-  const fence = /^```([^\n]*)\n([\s\S]*)\n```[ \t]*$/.exec(block)
-  if (fence) {
-    const [, info = '', source = ''] = fence
+  const firstBreak = block.indexOf('\n')
+  const opening = FENCE.exec(block.slice(0, firstBreak))
+  if (opening) {
+    const [, indent = '', marker = '', info = ''] = opening
+    const lastBreak = block.lastIndexOf('\n')
+    if (
+      indent !== '' ||
+      marker !== '```' ||
+      lastBreak <= firstBreak ||
+      !closesFence(block.slice(lastBreak + 1), marker)
+    ) {
+      return undefined
+    }
     // The whole name: a `mathematica` fence is code, not a formula.
     const [language] = info.trim().split(/\s+/)
     const script = language === 'mermaid' ? 'render' : language === 'math' ? 'math' : undefined
 
-    return script === undefined ? undefined : { script, source }
+    return script === undefined
+      ? undefined
+      : { script, source: block.slice(firstBreak + 1, lastBreak) }
   }
 
-  const formula = /^\$\$[ \t]*\n([\s\S]*)\n\$\$[ \t]*$/.exec(block)
+  const formula = /^\$\$[ \t\r]*\n([\s\S]*)\n\$\$[ \t\r]*$/.exec(block)
   if (formula) {
     return { script: 'math', source: formula[1] ?? '' }
   }
