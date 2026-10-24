@@ -4,7 +4,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Diagram, Frames } from '../types'
 import { KINDS, forms, hash, splitBlocks, classify } from './blocks'
-import { render } from './diagrams'
+import { render, scheduleRender } from './diagrams'
 
 // Atom addresses must be file-local for the hook scanner; the renderer uses the same key.
 const diagrams = atom({ plugin: 'reply-media', key: 'diagrams' } as const, {})
@@ -242,7 +242,7 @@ export const register: Register = (on, options) => {
         outcome = undefined
         if (!redrawn.has(part)) {
           redrawn.add(part)
-          void render($, part, drawn, true)
+          scheduleRender($, part, drawn, true)
         }
       }
 
@@ -317,7 +317,7 @@ export const register: Register = (on, options) => {
                 key={`retry:${hash(piece.block)}`}
                 label="retry"
                 onPress={() => {
-                  $.clock.after(0, () => render($, piece.block, drawn, true))
+                  scheduleRender($, piece.block, drawn, true)
                 }}
               />
             </Box>

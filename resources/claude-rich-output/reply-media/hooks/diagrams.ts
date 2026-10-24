@@ -13,6 +13,21 @@ const diagrams = atom({ plugin: 'reply-media', key: 'diagrams' } as const, {})
 const RENDER_TIMEOUT_MS = 30_000
 const pendingRenders = new Map<string, Promise<void>>()
 
+export function scheduleRender(
+  $: EngineInterface,
+  text: string,
+  drawn: ReadonlySet<Script>,
+  isForced = false
+) {
+  $.clock.after(0, async () => {
+    try {
+      await render($, text, drawn, isForced)
+    } catch (error) {
+      $.ui.toast(`Media preview failed: ${String(error)}`)
+    }
+  })
+}
+
 /**
  * Renders each block of `text` that has no outcome yet, and records it;
  * `isForced` renders the ones that have an outcome too.

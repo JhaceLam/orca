@@ -1,5 +1,4 @@
 import { build } from 'esbuild'
-import { createHash } from 'node:crypto'
 import {
   existsSync,
   readFileSync,
@@ -12,30 +11,12 @@ import {
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcessSync } from '@orca/process-host'
+import { computeClaudeRichOutputSourceHash } from './claude-rich-output-source-hash.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const output = join(root, 'out', 'claude-rich-output')
 const marker = join(output, '.source-hash')
-const hash = createHash('sha256')
-  .update(readFileSync(join(root, 'pnpm-lock.yaml')))
-  .update(readFileSync(import.meta.filename))
-function visit(directory) {
-  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) =>
-    a.name.localeCompare(b.name)
-  )) {
-    if (entry.name === 'node_modules') {
-      continue
-    }
-    const file = join(directory, entry.name)
-    if (entry.isDirectory()) {
-      visit(file)
-    } else {
-      hash.update(file.slice(root.length)).update(readFileSync(file))
-    }
-  }
-}
-visit(join(root, 'resources', 'claude-rich-output'))
-const key = hash.digest('hex')
+const key = computeClaudeRichOutputSourceHash(root)
 if (!existsSync(marker) || readFileSync(marker, 'utf8') !== key) {
   const result = runProcessSync({
     program: 'pnpm',
