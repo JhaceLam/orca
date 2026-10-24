@@ -7,10 +7,11 @@
 // or, for an SVG, `rsvg-convert` (brew install librsvg). The size is in the
 // picture's own px: the PNG's, or the SVG's.
 import { runRendererProcess as spawnSync } from './process.mjs'
-import { createHash } from 'node:crypto'
-import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { closeSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { mediaCacheDirectory } from './media-cache-directory.mjs'
+import { readPngCacheEntry } from './png-cache-entry.mjs'
 import { join, resolve } from 'node:path'
 
 // An SVG is drawn this many PNG px to each px of its own, as render.mjs draws
@@ -50,24 +51,35 @@ if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
   // is every SVG once the zoom changes.
   const name = createHash('sha1').update(`${path}${stat.mtimeMs}@${zoom}`).digest('hex')
   file = join(dir, `${name}.png`)
-  const png = isSvg
-    ? spawnSync('rsvg-convert', ['--zoom', String(zoom), '--output', file, path])
-    : process.platform === 'darwin'
-      ? spawnSync('sips', ['-s', 'format', 'png', path, '--out', file])
-      : spawnSync('ffmpeg', [
-          '-v',
-          'error',
-          '-y',
-          '-i',
-          path,
-          '-frames:v',
-          '1',
-          '-threads',
-          '1',
-          file
-        ])
-  if (png.status !== 0) {
-    throw new Error(String(png.stderr || png.error))
+  if (!readPngCacheEntry(file)) {
+    const temporary = `${file}.${process.pid}.${randomUUID()}.png`
+    try {
+      const png = isSvg
+        ? spawnSync('rsvg-convert', ['--zoom', String(zoom), '--output', temporary, path])
+        : process.platform === 'darwin'
+          ? spawnSync('sips', ['-s', 'format', 'png', path, '--out', temporary])
+          : spawnSync('ffmpeg', [
+              '-v',
+              'error',
+              '-y',
+              '-i',
+              path,
+              '-frames:v',
+              '1',
+              '-threads',
+              '1',
+              temporary
+            ])
+      if (png.status !== 0) {
+        throw new Error(String(png.stderr || png.error))
+      }
+      if (!readPngCacheEntry(temporary)) {
+        throw new Error('conversion did not produce a complete PNG')
+      }
+      renameSync(temporary, file)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
   }
 }
 

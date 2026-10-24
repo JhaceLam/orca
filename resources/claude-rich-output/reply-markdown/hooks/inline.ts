@@ -77,10 +77,13 @@ export function inline(text: string, depth = 0): Inline[] {
             continue
           }
         }
+        if (delimiter.length === 1 && text.startsWith(delimiter + delimiter, end)) {
+          end++
+          continue
+        }
         if (
           text.startsWith(delimiter, end) &&
           /\S/.test(text[end - 1] ?? '') &&
-          !(delimiter.length === 1 && text[end + 1] === delimiter) &&
           !(delimiter[0] === '_' && /[\p{L}\p{N}]/u.test(text[end + delimiter.length] ?? ''))
         ) {
           break

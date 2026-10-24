@@ -105,6 +105,23 @@ test('deletion keeps nested emphasis and link targets', async ($, on) => {
   expect((await ui.find({ type: 'Link' }))?.props.href).toBe('https://example.com/a_thing')
 })
 
+for (const delimiter of ['*', '_']) {
+  test(`deletion prose preserves bold nested inside ${delimiter} italic`, async ($, on) => {
+    engine(on)
+    const ui = await mount(
+      $,
+      `~~x~~ ${delimiter}a ${delimiter.repeat(2)}b${delimiter.repeat(2)} c${delimiter}`
+    )
+    try {
+      expect((await ui.find({ type: 'Text', text: /^a b c$/ }))?.props.italic).toBe(true)
+      expect((await ui.find({ type: 'Text', text: /^b$/ }))?.props.bold).toBe(true)
+      expect((await ui.find({ type: 'Text', text: /^x$/ }))?.props.strikethrough).toBe(true)
+    } finally {
+      await ui.unmount()
+    }
+  })
+}
+
 test("headings, list items and rules are the mod's, the rest the engine's", async ($, on) => {
   const drawn = engine(on)
   const ui = await mount($, TEXT)
