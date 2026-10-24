@@ -44,6 +44,7 @@ or re-enable them. Unreadable plugin metadata leaves the ordinary launch intact.
 ## Orca adaptations
 
 - XML-safe MathJax serialization, including cases, inequalities and ampersands.
+- Private per-user media cache (POSIX mode 0700), rejecting unsafe existing directories.
 - Atomic, versioned formula cache; coalesced requests; a 30-second render timeout
   with one retry for an aborted process.
 - Inline PNG transport for small images and video frames across remote sessions.

@@ -2,14 +2,15 @@
 // Prints {"file","width","height","path"} for the image file at a path:
 // absolute, under ~/ or relative to the working directory; "path" is it made
 // absolute. A PNG is used as it is; any
-// other is drawn as <tmp>/claude-reply-media/<sha1>.png, by `sips` (macOS)
+// other is drawn as the private per-user cache/<sha1>.png, by `sips` (macOS)
 // or `ffmpeg` (Linux)
 // or, for an SVG, `rsvg-convert` (brew install librsvg). The size is in the
 // picture's own px: the PNG's, or the SVG's.
 import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash } from 'node:crypto'
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { mediaCacheDirectory } from './media-cache-directory.mjs'
 import { join, resolve } from 'node:path'
 
 // An SVG is drawn this many PNG px to each px of its own, as render.mjs draws
@@ -42,8 +43,7 @@ let zoom = 1
 // Told by its signature, not its extension: the terminal reads `file` as a
 // PNG whatever it is called.
 if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
-  const dir = join(tmpdir(), 'claude-reply-media')
-  mkdirSync(dir, { recursive: true })
+  const dir = mediaCacheDirectory()
   const isSvg = /\.svgz?$/i.test(path)
   zoom = isSvg ? ZOOM : 1
   // Named by path, mtime and zoom, so an edited file is drawn again, and so

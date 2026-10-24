@@ -1,7 +1,7 @@
 // Usage: node video.mjs < path.txt          the clip's first frame
 //        node video.mjs frames < path.txt   every frame, to play it
 // The path is absolute, under ~/ or relative to the working directory. The
-// frames are <tmp>/claude-reply-media/<sha1>/f00001.png and on, cut by
+// frames are the private per-user cache/<sha1>/f00001.png and on, cut by
 // `ffmpeg` (brew install ffmpeg). The first prints {"file","width","height",
 // "clip"}: the first frame, its size in px and the clip's absolute path. The
 // second prints {"dir","count","fps"}.
@@ -10,7 +10,6 @@ import { createHash } from 'node:crypto'
 import {
   closeSync,
   existsSync,
-  mkdirSync,
   openSync,
   readFileSync,
   readSync,
@@ -18,7 +17,8 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
+import { mediaCacheDirectory, privateMediaDirectory } from './media-cache-directory.mjs'
 import { join, resolve } from 'node:path'
 
 // shortcut: the whole clip is cut at its first play, into at most MAX_FRAMES
@@ -42,8 +42,7 @@ if (!stat.isFile()) {
 
 // Named by path and mtime, so an edited clip is cut again.
 const name = createHash('sha1').update(`${clip}${stat.mtimeMs}`).digest('hex')
-const dir = join(tmpdir(), 'claude-reply-media', name)
-mkdirSync(dir, { recursive: true })
+const dir = privateMediaDirectory(join(mediaCacheDirectory(), name))
 const frame = (number) => join(dir, `f${String(number).padStart(5, '0')}.png`)
 
 const run = (command, args) => {

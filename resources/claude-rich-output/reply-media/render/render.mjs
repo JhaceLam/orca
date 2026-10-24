@@ -1,11 +1,11 @@
 // Usage: node render.mjs < diagram.mmd
-// Writes <tmp>/claude-reply-media/<sha1>.png and prints {"file","width","height"},
+// Writes the private per-user cache/<sha1>.png and prints {"file","width","height"},
 // the size in CSS px. Needs `rsvg-convert` (brew install librsvg) on PATH.
 import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
+import { readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { registerHooks } from 'node:module'
-import { tmpdir } from 'node:os'
+import { mediaCacheDirectory } from './media-cache-directory.mjs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -101,10 +101,9 @@ export function flatten(svg) {
   return (out + svg.slice(from)).replace(/@import url\('[^']*'\);/g, '')
 }
 
-/** Draws `svg` as <tmp>/claude-reply-media/<sha1 of key>.png and prints its line. */
+/** Draws `svg` as the private per-user cache/<sha1 of key>.png and prints its line. */
 function cacheFile(key) {
-  const dir = join(tmpdir(), 'claude-reply-media')
-  mkdirSync(dir, { recursive: true })
+  const dir = mediaCacheDirectory()
   return join(dir, `${createHash('sha1').update(key).digest('hex')}.png`)
 }
 
