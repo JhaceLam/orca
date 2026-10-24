@@ -10,6 +10,101 @@ import {
 } from './xterm-kitty-placeholder-test-terminal.mjs'
 afterEach(() => vi.unstubAllGlobals())
 
+it.each([
+  { name: 'lowercase full delete and re-place', selector: 'i', partial: false, replace: true },
+  {
+    name: 'lowercase last-placement delete and re-place',
+    selector: 'i',
+    partial: true,
+    replace: true
+  },
+  {
+    name: 'lowercase partial delete with a surviving placement',
+    selector: 'i',
+    partial: true,
+    replace: false
+  },
+  {
+    name: 'uppercase partial delete with a surviving placement',
+    selector: 'I',
+    partial: true,
+    replace: false
+  }
+])(
+  'recovers after $name followed by encoded-byte eviction',
+  async ({ selector, partial, replace }) => {
+    const saved = new Map()
+    const read = vi.fn(async (id) => saved.get(id))
+    const h = createPlaceholderTerminal({
+      readKittyImage: read,
+      onKittyImageChanged: (id, snapshot) => {
+        if (snapshot) {
+          saved.set(id, snapshot)
+        } else {
+          saved.delete(id)
+        }
+      }
+    })
+    try {
+      await writeKitty(h.terminal, 'a=T,f=100,i=7,p=1,U=1,c=2,r=2', PNG)
+      if (!replace) {
+        await writeKitty(h.terminal, 'a=p,i=7,p=2,U=1,c=3,r=1')
+      }
+      await writeKitty(
+        h.terminal,
+        `a=d,d=${selector},i=7${partial ? `,p=${replace ? 1 : 2}` : ''},q=2`
+      )
+      if (replace) {
+        await writeKitty(h.terminal, 'a=p,i=7,p=1,U=1,c=3,r=1')
+      }
+      const latest = saved.get(7)
+      expect(latest).toBeDefined()
+      vi.spyOn(h.storage, 'getLimit').mockReturnValue(latest.image.data.size / 1000000)
+      await writeKitty(h.terminal, 'a=T,f=100,i=8,U=1,c=2,r=2', PNG)
+      expect(h.kitty.getImage(7)).toBeUndefined()
+      await write(h.terminal, placeholderCells(7, 1))
+      render(h)
+      await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+      expect(h.kitty._virtualPlacementFor(7, 1).cols).toBe(replace ? 3 : 2)
+      expect(h.kitty._virtualPlacementFor(7, 2)).toBeUndefined()
+      expect(read).toHaveBeenCalledTimes(1)
+    } finally {
+      h.terminal.dispose()
+    }
+  }
+)
+
+it.each(['i', 'I'])(
+  'does not resurrect deleted placements from a stale cache after d=%s without re-place',
+  async (selector) => {
+    let stale
+    const read = vi.fn(async () => stale)
+    const h = createPlaceholderTerminal({
+      readKittyImage: read,
+      onKittyImageChanged: (_id, snapshot) => {
+        if (snapshot && snapshot.image.id === 7) {
+          stale = snapshot
+        }
+      }
+    })
+    try {
+      await writeKitty(h.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+      await writeKitty(h.terminal, `a=d,d=${selector},i=7,q=2`)
+      vi.spyOn(h.storage, 'getLimit').mockReturnValue(stale.image.data.size / 1000000)
+      await writeKitty(h.terminal, 'a=T,f=100,i=8,U=1,c=2,r=2', PNG)
+      await write(h.terminal, placeholderCells(7))
+      for (let frame = 0; frame < 3; frame++) {
+        render(h)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      expect(h.kitty.getImage(7)).toBeUndefined()
+      expect(read).not.toHaveBeenCalled()
+    } finally {
+      h.terminal.dispose()
+    }
+  }
+)
+
 it('lazily decodes a pixel-evicted prototype without a new transmission', async () => {
   const h = createPlaceholderTerminal()
   try {
