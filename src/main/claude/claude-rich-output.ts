@@ -31,23 +31,24 @@ function bundledRoots(options: ClaudeRichOutputLaunch): string[] {
 export async function applyClaudeRichOutputEnv(
   env: Record<string, string>,
   options: ClaudeRichOutputLaunch,
-  roots: readonly string[] = bundledRoots(options)
+  roots: readonly string[] = bundledRoots(options),
+  inheritedEnv: NodeJS.ProcessEnv = process.env
 ): Promise<void> {
   const enabled = env.ORCA_CLAUDE_RICH_OUTPUT === '1'
   // The launch intent must not leak into a nested Orca process after this host consumes it.
   delete env.ORCA_CLAUDE_RICH_OUTPUT
-  restoreOrStripOverlayEnv(env, overlay)
+  restoreOrStripOverlayEnv(env, overlay, inheritedEnv)
   if (options.launchAgent !== 'claude' || !enabled || options.isWsl) {
     return
   }
   const launchEnv = { ...env }
   for (const key of ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_PLUGIN_DIRS']) {
-    const value = process.env[key]
+    const value = inheritedEnv[key]
     if (launchEnv[key] === undefined && value !== undefined) {
       launchEnv[key] = value
     }
   }
-  restoreOrStripOverlayEnv(launchEnv, overlay)
+  restoreOrStripOverlayEnv(launchEnv, overlay, inheritedEnv)
   const root = roots.find((candidate) =>
     ['reply-markdown', 'reply-media'].every((name) =>
       existsSync(join(candidate, name, '.claude-plugin', 'plugin.json'))

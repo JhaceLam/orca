@@ -31,6 +31,10 @@ function fixture() {
   for (const name of ['build-claude-rich-output.mjs', 'claude-rich-output-source-hash.mjs']) {
     put(`config/scripts/${name}`, readFileSync(join(scripts, name)))
   }
+  put(
+    'src/shared/claude-rich-output-artifacts.ts',
+    readFileSync(join(scripts, '../../src/shared/claude-rich-output-artifacts.ts'))
+  )
   put('pnpm-lock.yaml', 'fixture lock')
   put('resources/claude-rich-output/foo', 'barvalue')
   put(
@@ -57,18 +61,30 @@ export function runProcessSync({ args }) {
   return { code: 0 };
 }`
   )
-  const build = () => {
-    const result = runProcessSync({
+  const runBuild = () =>
+    runProcessSync({
       program: process.execPath,
       args: [join(root, 'config/scripts/build-claude-rich-output.mjs')],
       cwd: root,
       timeoutMs: 30_000
     })
+  const build = () => {
+    const result = runBuild()
     expect(result.code, result.stderr).toBe(0)
   }
   const deployments = () => readFileSync(join(root, 'deploy.log'), 'utf8').trim().split('\n').length
-  return { root, put, build, deployments }
+  return { root, put, build, runBuild, deployments }
 }
+
+test('the build rejects an unsafe dependency filename before publishing its manifest', () => {
+  const { root, put, runBuild } = fixture()
+  put('resources/claude-rich-output/notes with spaces.txt', 'dependency asset')
+  const result = runBuild()
+  expect(result.code).not.toBe(0)
+  expect(result.stderr).toContain('Unsafe Claude rich output asset path')
+  expect(result.stderr).toContain('notes with spaces.txt')
+  expect(existsSync(join(root, 'out/claude-rich-output/manifest.json'))).toBe(false)
+})
 
 test('a filename/content boundary collision deploys the new files instead of retaining stale output', () => {
   const { root, put, build, deployments } = fixture()

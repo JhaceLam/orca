@@ -9,7 +9,6 @@ afterEach(() => {
   for (const root of temporary.splice(0)) {
     rmSync(root, { recursive: true, force: true })
   }
-  vi.unstubAllEnvs()
   vi.restoreAllMocks()
 })
 
@@ -41,8 +40,8 @@ function fixture() {
     launchAgent: 'claude' as const,
     cwd
   }
-  const launch = async () => {
-    await applyClaudeRichOutputEnv(env, options, [bundle])
+  const launch = async (inheritedEnv: NodeJS.ProcessEnv = process.env) => {
+    await applyClaudeRichOutputEnv(env, options, [bundle], inheritedEnv)
     return (env.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(delimiter).filter(Boolean)
   }
   return { root, configDir, cwd, bundle, plugin, env, launch }
@@ -51,18 +50,21 @@ function fixture() {
 describe('preserving execution-host Claude plugins', () => {
   it('checks the inherited daemon profile when the pane does not select one', async () => {
     const f = fixture()
-    vi.stubEnv('CLAUDE_CONFIG_DIR', f.configDir)
     delete f.env.CLAUDE_CONFIG_DIR
     json(join(f.configDir, 'settings.json'), { enabledPlugins: { 'reply-media@neoncoat': false } })
-    expect(await f.launch()).toEqual([join(f.bundle, 'reply-markdown')])
+    expect(await f.launch({ CLAUDE_CONFIG_DIR: f.configDir })).toEqual([
+      join(f.bundle, 'reply-markdown')
+    ])
   })
 
   it('keeps inherited daemon plugin paths and avoids injecting their second copy', async () => {
     const f = fixture()
     const userMarkdown = join(f.root, 'user-markdown')
     f.plugin(userMarkdown, 'reply-markdown')
-    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', userMarkdown)
-    expect(await f.launch()).toEqual([userMarkdown, join(f.bundle, 'reply-media')])
+    expect(await f.launch({ CLAUDE_CODE_PLUGIN_DIRS: userMarkdown })).toEqual([
+      userMarkdown,
+      join(f.bundle, 'reply-media')
+    ])
   })
 
   it('lets explicit pane and account values override the daemon inheritance', async () => {
@@ -73,12 +75,15 @@ describe('preserving execution-host Claude plugins', () => {
     })
     const inheritedMedia = join(f.root, 'inherited-media')
     f.plugin(inheritedMedia, 'reply-media')
-    vi.stubEnv('CLAUDE_CONFIG_DIR', inheritedProfile)
-    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', inheritedMedia)
     const explicitMarkdown = join(f.root, 'explicit-markdown')
     f.plugin(explicitMarkdown, 'reply-markdown')
     f.env.CLAUDE_CODE_PLUGIN_DIRS = explicitMarkdown
-    expect(await f.launch()).toEqual([explicitMarkdown, join(f.bundle, 'reply-media')])
+    expect(
+      await f.launch({
+        CLAUDE_CONFIG_DIR: inheritedProfile,
+        CLAUDE_CODE_PLUGIN_DIRS: inheritedMedia
+      })
+    ).toEqual([explicitMarkdown, join(f.bundle, 'reply-media')])
     expect(f.env.CLAUDE_CONFIG_DIR).toBe(f.configDir)
   })
 
@@ -86,12 +91,26 @@ describe('preserving execution-host Claude plugins', () => {
     const f = fixture()
     const inherited = join(f.root, 'inherited-markdown')
     f.plugin(inherited, 'reply-markdown')
-    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', inherited)
     f.env.CLAUDE_CODE_PLUGIN_DIRS = ''
-    expect(await f.launch()).toEqual([
+    expect(await f.launch({ CLAUDE_CODE_PLUGIN_DIRS: inherited })).toEqual([
       join(f.bundle, 'reply-markdown'),
       join(f.bundle, 'reply-media')
     ])
+  })
+
+  it('uses the supplied overlay baseline when disabling rich output', async () => {
+    const f = fixture()
+    const original = join(f.root, 'original-plugin')
+    const overlay = [original, join(f.bundle, 'reply-media')].join(delimiter)
+    f.env.CLAUDE_CODE_PLUGIN_DIRS = overlay
+    f.env.ORCA_CLAUDE_RICH_OUTPUT = '0'
+    expect(
+      await f.launch({
+        ORCA_CLAUDE_PLUGIN_DIRS: overlay,
+        ORCA_CLAUDE_SOURCE_PLUGIN_DIRS: original
+      })
+    ).toEqual([original])
+    expect(f.env.ORCA_CLAUDE_PLUGIN_DIRS).toBeUndefined()
   })
 
   it('ignores a configured plugin entry that is an ordinary file', async () => {

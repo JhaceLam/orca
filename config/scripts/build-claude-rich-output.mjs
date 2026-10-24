@@ -12,6 +12,7 @@ import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcessSync } from '@orca/process-host'
 import { computeClaudeRichOutputSourceHash } from './claude-rich-output-source-hash.mjs'
+import { claudeRichOutputAssetFilenames } from '../../src/shared/claude-rich-output-artifacts.ts'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const output = join(root, 'out', 'claude-rich-output')
@@ -84,4 +85,6 @@ function collect(directory, relative = 'claude-rich-output') {
   }
 }
 collect(output)
-writeFileSync(join(output, 'manifest.json'), JSON.stringify({ assets: assets.sort() }))
+const manifestText = JSON.stringify({ assets: assets.sort() })
+claudeRichOutputAssetFilenames(manifestText)
+writeFileSync(join(output, 'manifest.json'), manifestText)

@@ -26,4 +26,13 @@ describe('rich output deployment inventory', () => {
     expect(() => claudeRichOutputAssetFilenames(JSON.stringify({ assets: [path, path] }))).toThrow()
     expect(() => claudeRichOutputAssetFilenames(JSON.stringify({ assets: [] }))).toThrow()
   })
+
+  it('accepts the bounded inventory and rejects overflow', () => {
+    const assets = Array.from({ length: 20000 }, (_, index) => `claude-rich-output/${index}.mjs`)
+    expect(claudeRichOutputAssetFilenames(JSON.stringify({ assets }))).toHaveLength(20000)
+    assets.push('claude-rich-output/overflow.mjs')
+    expect(() => claudeRichOutputAssetFilenames(JSON.stringify({ assets }))).toThrow(
+      'Invalid Claude rich output asset manifest'
+    )
+  })
 })

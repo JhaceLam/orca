@@ -24,7 +24,7 @@ export function claudeRichOutputAssetFilenames(contents: string): string[] {
   }
   const assets = manifest.assets.map((path: unknown) => {
     if (typeof path !== 'string' || !isClaudeRichOutputAsset(path)) {
-      throw new Error('Unsafe Claude rich output asset path')
+      throw new Error(`Unsafe Claude rich output asset path: ${JSON.stringify(path)}`)
     }
     return path
   })
