@@ -6,7 +6,7 @@
 // "clip"}: the first frame, its size in px and the clip's absolute path. The
 // second prints {"dir","count","fps"}.
 import { runRendererProcess as spawnSync } from './process.mjs'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   closeSync,
   existsSync,
@@ -14,6 +14,8 @@ import {
   readFileSync,
   readSync,
   readdirSync,
+  renameSync,
+  rmSync,
   statSync,
   writeFileSync
 } from 'node:fs'
@@ -55,7 +57,23 @@ const run = (command, args) => {
 
 if (process.argv[2] === 'frames') {
   const kept = join(dir, 'frames.json')
-  let frames = existsSync(kept) ? JSON.parse(readFileSync(kept, 'utf8')) : undefined
+  let frames
+  try {
+    const cached = JSON.parse(readFileSync(kept, 'utf8'))
+    if (
+      cached?.dir === dir &&
+      Number.isInteger(cached.count) &&
+      cached.count > 0 &&
+      cached.count <= MAX_FRAMES &&
+      Number.isInteger(cached.fps) &&
+      cached.fps > 0 &&
+      cached.fps <= MAX_FPS
+    ) {
+      frames = { dir, count: cached.count, fps: cached.fps }
+    }
+  } catch {
+    // Missing, unreadable or interrupted cache entries must be regenerated.
+  }
   // The temp folder is swept file by file: a cut that lost its end is made again.
   if (!frames || !existsSync(frame(frames.count))) {
     // A recording may carry no duration (a MediaRecorder webm): the top rate.
@@ -80,7 +98,13 @@ if (process.argv[2] === 'frames') {
     ])
     const count = readdirSync(dir).filter((file) => /^f\d{5}\.png$/.test(file)).length
     frames = { dir, count, fps }
-    writeFileSync(kept, JSON.stringify(frames))
+    const temporary = `${kept}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      writeFileSync(temporary, JSON.stringify(frames), { flag: 'wx', mode: 0o600 })
+      renameSync(temporary, kept)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
   }
   console.log(JSON.stringify(frames))
 } else {
