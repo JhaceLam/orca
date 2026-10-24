@@ -27,7 +27,7 @@ export function inline(text: string, depth = 0): Inline[] {
     }
   }
   for (let at = 0; at < text.length;) {
-    if (text[at] === '\\' && /[\\`*_~[\]<>]/.test(text[at + 1] ?? '')) {
+    if (text[at] === '\\' && /[!-/:-@[-`{-~]/.test(text[at + 1] ?? '')) {
       literal(text[at + 1]!)
       at += 2
       continue

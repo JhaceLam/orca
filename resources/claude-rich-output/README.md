@@ -63,3 +63,11 @@ With the execution-host prerequisites installed, run `pnpm test:claude-rich-outp
 to run the renderer regressions plus Claude's own plugin validation and hook tests.
 This separate runner requires Claude Code and librsvg/ffmpeg, and is not part of
 the ordinary CI unit suite. No model request is made by these checks.
+
+The hook files run in Claude's isolated plugin VM, with its own JSX globals and API.
+Their `tsconfig.json` files are standalone authoring configurations, separate
+from Orca's Node/Electron projects. For an authoring typecheck, first load the plugin
+from an owned folder in a compatible Claude CLI (which writes `.claude-plugin/types`),
+then run `tsc --project tsconfig.json` in that plugin folder. Generated API
+declarations are not part of Orca's bundle. Runtime hook validation and tests use
+`claude plugin validate` and `claude plugin test`; no model request is needed.

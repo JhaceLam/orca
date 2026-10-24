@@ -1,6 +1,6 @@
 import { run, isGone, imageSource } from './render-process'
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Diagram, Frames } from '../types'
 import { KINDS, forms, hash, BLOCK, classify } from './blocks'
@@ -70,7 +70,8 @@ const redrawn = new Set<string>()
 // drawing reads it when the `playing` value changes.
 // shortcut: kept in the module, so a reload of the mod rewinds every video;
 // keep it in `$.state` if that starts to matter.
-let timer: Timer | undefined
+type PlaybackTimer = { cancel: () => void }
+let timer: PlaybackTimer | undefined
 let playRequest = 0
 const stoppedAt = new Map<string, number>()
 
@@ -161,7 +162,7 @@ async function startVideo(
   await update($, preparing, () => null)
   // A second press while the cut ran started a timer of its own.
   timer?.cancel()
-  const own: Timer = $.clock.every(Math.round(1000 / frames.fps), async () => {
+  const own: PlaybackTimer = $.clock.every(Math.round(1000 / frames.fps), async () => {
     const shown = index++
     const isLast = shown >= frames.count - 1
     if (isLast) {

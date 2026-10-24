@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -63,6 +63,29 @@ const draws = (source, entry = join(import.meta.dirname, 'render.mjs')) => {
 
 test('a diagram that opens with frontmatter is drawn without it', () => {
   draws('---\nconfig:\n  theme: dark\n---\nxychart-beta\n  x-axis [Jan, Feb]\n  line [1, 2]')
+})
+
+test('a cached diagram is reused without rasterizing it again', () => {
+  const source = `flowchart LR\n A[cache ${process.pid}] --> B[reuse]`
+  const draw = () =>
+    spawnSync(process.execPath, [join(import.meta.dirname, 'render.mjs')], {
+      input: source,
+      encoding: 'utf8'
+    })
+  const first = draw()
+  assert.equal(first.status, 0, first.stderr)
+  const image = JSON.parse(first.stdout)
+  try {
+    const pixels = readFileSync(image.file)
+    utimesSync(image.file, 1, 1)
+    const again = draw()
+    assert.equal(again.status, 0, again.stderr)
+    assert.deepEqual(JSON.parse(again.stdout), image)
+    assert.equal(statSync(image.file).mtimeMs, 1000)
+    assert.deepEqual(readFileSync(image.file), pixels)
+  } finally {
+    rmSync(image.file, { force: true })
+  }
 })
 
 // A small diagram of each type the Diagrams note lets Claude write.

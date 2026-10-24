@@ -27,7 +27,7 @@ function switchOf(block: Block): Switch | undefined {
       return 'rules'
     case 'code':
       return 'codeCards'
-    default:
+    case 'raw':
       return undefined
   }
 }
@@ -178,7 +178,7 @@ export const register: Register = (on, options) => {
     }
 
     const { Box, Button, Code, Link, Markdown, Text } = $.ui.resolve(e)
-    const spans = (parts: Inline[]): (string | RenderElement)[] => {
+    const spans = (parts: Inline[]) => {
       const occurrences = new Map<string, number>()
       return parts.map((part) => {
         if ('text' in part) {
@@ -297,7 +297,7 @@ export const register: Register = (on, options) => {
             {upright &&
               [...offsets, total - 1].map((left) => (
                 <Box
-                  key={left}
+                  key={String(left)}
                   position="absolute"
                   top={0}
                   bottom={0}
@@ -310,7 +310,7 @@ export const register: Register = (on, options) => {
               ))}
             {widths.map((each, column) => (
               <Box
-                key={column}
+                key={String(column)}
                 flexDirection="column"
                 alignItems={block.align[column]}
                 width={each + 3}

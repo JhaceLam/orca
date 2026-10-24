@@ -177,11 +177,17 @@ export function withModelOrder(url, context, nextLoad) {
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   // Loaded here, not imported above: the hook must be in place first, and
   // math.mjs, which imports this file, needs no mermaid.
-  registerHooks({ load: withModelOrder })
-  const { renderMermaidSVG } = await import('beautiful-mermaid')
   // A `---` frontmatter block (config, title) is dropped: the colors are
   // THEME's, and beautiful-mermaid rejects a diagram that opens with one.
   const source = readFileSync(0, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
   // Named by theme and source, so a restyle never shows a picture drawn before it.
-  rasterize(flatten(renderMermaidSVG(source, THEME)), JSON.stringify(THEME) + source)
+  const key = JSON.stringify(['mermaid-v1', THEME]) + source
+  const previous = cached(key)
+  if (previous) {
+    console.log(JSON.stringify(previous))
+  } else {
+    registerHooks({ load: withModelOrder })
+    const { renderMermaidSVG } = await import('beautiful-mermaid')
+    rasterize(flatten(renderMermaidSVG(source, THEME)), key)
+  }
 }

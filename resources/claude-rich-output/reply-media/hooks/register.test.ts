@@ -66,7 +66,7 @@ for (const stdout of ['', '{broken', 'null', '[]']) {
     expect(drawn).toEqual(['Before', 'After'])
     expect(await ui.find({ type: 'Image' })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /^✗ not drawn: renderer printed/ })).toBeDefined()
-    expect(await ui.find({ type: 'Button', label: 'retry' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: 'retry' })).toBeDefined()
     await ui.unmount()
   })
 }
@@ -104,7 +104,7 @@ for (const failure of ['stat', 'read']) {
     on('ui.blit', () => ({ value: {} }))
     const text = 'Before\n\n![paused](paused.mp4)\n\nAfter'
     const ui = await reply($, `paused-${failure}`, text)
-    const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+    const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
     await ui.press({ key })
     await clock.settle()
     await clock.advance(200)
@@ -119,7 +119,7 @@ for (const failure of ['stat', 'read']) {
       props: { text, isFirstOfReply: true }
     })
     expect(await restored.find({ type: 'Image' })).toBeDefined()
-    expect(await restored.find({ type: 'Button', label: '▶ play' })).toBeDefined()
+    expect(await restored.find({ type: 'Button', text: '▶ play' })).toBeDefined()
     expect(reads).toContain(poster)
     await restored.unmount()
   })
@@ -156,13 +156,13 @@ for (const failure of ['stat', 'read']) {
       return { value: {} }
     })
     const ui = await reply($, `playing-${failure}`, '![playing](playing.mp4)')
-    const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+    const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
     await ui.press({ key })
     await clock.settle()
-    expect(await ui.find({ type: 'Button', label: '❚❚ pause' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: '❚❚ pause' })).toBeDefined()
     swept = true
     await clock.advance(100)
-    expect(await ui.find({ type: 'Button', label: '▶ play' })).toBeDefined()
+    expect(await ui.find({ type: 'Button', text: '▶ play' })).toBeDefined()
     expect(await ui.find({ type: 'Image' })).toBeDefined()
     await clock.advance(500)
     expect(blits).toBe(0)
@@ -275,7 +275,7 @@ test('a cached render failure can be retried after repairing the renderer', asyn
   }))
   engine(on)
   const ui = await reply($, 'row-retry')
-  const retry = await ui.find({ type: 'Button', label: 'retry' })
+  const retry = await ui.find({ type: 'Button', text: 'retry' })
   expect(retry).toBeDefined()
   await ui.press({ key: String(retry?.props.key) })
   await clock.settle()
@@ -313,7 +313,7 @@ test('repeated timeouts stop after two attempts and remain visible', async ($, o
   const ui = await reply($, 'persistent-timeout')
   expect(calls).toBe(2)
   expect(await ui.find({ type: 'Image' })).toBeUndefined()
-  expect(await ui.find({ type: 'Button', label: 'retry' })).toBeDefined()
+  expect(await ui.find({ type: 'Button', text: 'retry' })).toBeDefined()
 })
 
 test('a genuine renderer error is not retried or hidden', async ($, on) => {
@@ -346,7 +346,7 @@ test('the same block repeated within a reply is rendered only once', async ($, o
  * Stands for a resumed session of four replies, each one diagram, and starts
  * it; answers the sources the mod rendered, in order.
  */
-const resume = async ($: Engine, on: On, surface: RenderSurface | null = 'terminal') => {
+const resume = async ($: Engine, on: On, surface: 'terminal' | null = 'terminal') => {
   const rendered: (string | undefined)[] = []
   engine(on)
   on('session.messages', () => ({
@@ -703,7 +703,7 @@ test('a slow first video extraction returns the press and remains cancellable', 
   on('ui.toast', () => ({ value: undefined }))
   engine(on)
   const ui = await reply($, 'slow-video', '![slow](slow.mkv)')
-  const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+  const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
   const pressed = ui.press({ key })
   await clock.settle()
   expect(pressReturned).toBe(true)
@@ -735,7 +735,7 @@ test('a slow video starts after preparation without another press', async ($, on
   })
   engine(on)
   const ui = await reply($, 'slow-plays', '![slow](slow.mkv)')
-  const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+  const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
   const pressed = ui.press({ key })
   await clock.settle()
   await clock.advance(12_000)

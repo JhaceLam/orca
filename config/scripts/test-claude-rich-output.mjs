@@ -4,6 +4,7 @@ import { runProcessSync } from '@orca/process-host'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const tests = [
+  ...globSync('resources/claude-rich-output/reply-markdown/hooks/*.test.mjs', { cwd: root }),
   ...globSync('resources/claude-rich-output/reply-media/render/*.test.mjs', { cwd: root })
 ]
 function run(program, args) {

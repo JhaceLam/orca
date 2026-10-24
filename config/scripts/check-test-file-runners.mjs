@@ -22,11 +22,13 @@ const NON_UNIT_TEST_RUNNERS = [
     manual: true,
     include: [
       'resources/claude-rich-output/reply-markdown/hooks/*.test.ts',
+      'resources/claude-rich-output/reply-markdown/hooks/*.test.mjs',
       'resources/claude-rich-output/reply-media/hooks/*.test.ts',
       'resources/claude-rich-output/reply-media/render/*.test.mjs'
     ],
     sources: ['config/scripts/test-claude-rich-output.mjs'],
     mirrors: [
+      'resources/claude-rich-output/reply-markdown/hooks/*.test.mjs',
       'resources/claude-rich-output/reply-media/render/*.test.mjs',
       "['reply-markdown', 'reply-media']",
       "['plugin', 'test', path]"
