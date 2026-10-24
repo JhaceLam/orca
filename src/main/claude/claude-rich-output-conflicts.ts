@@ -11,7 +11,11 @@ const MAX_METADATA_BYTES = 4 * 1024 * 1024
 const MAX_PLUGIN_DIRECTORIES = 1_024
 
 function isMissing(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+  )
 }
 
 async function readMetadata(path: string): Promise<string | null> {

@@ -105,6 +105,12 @@ describe('opt-in Claude rich output', () => {
       userMarkdown,
       join(root, 'reply-media')
     ])
+    env.ORCA_CLAUDE_RICH_OUTPUT = '1'
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
+    expect(env.CLAUDE_CODE_PLUGIN_DIRS.split(delimiter)).toEqual([
+      userMarkdown,
+      join(root, 'reply-media')
+    ])
     await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(userMarkdown)
   })

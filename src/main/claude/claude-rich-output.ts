@@ -54,9 +54,10 @@ export async function applyClaudeRichOutputEnv(
   let installed: Set<string>
   try {
     installed = await findClaudeRichOutputConflicts(env, options.cwd ?? process.cwd())
-  } catch {
+  } catch (error) {
     console.warn(
-      '[claude-rich-output] Could not inspect existing plugins; keeping the ordinary launch'
+      '[claude-rich-output] Could not inspect existing plugins; keeping the ordinary launch:',
+      error instanceof Error ? error.message : String(error)
     )
     return
   }

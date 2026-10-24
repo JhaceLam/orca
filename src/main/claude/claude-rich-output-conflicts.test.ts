@@ -48,6 +48,38 @@ function fixture() {
 }
 
 describe('preserving execution-host Claude plugins', () => {
+  it('ignores a configured plugin entry that is an ordinary file', async () => {
+    const f = fixture()
+    const note = join(f.root, 'notes.txt')
+    writeFileSync(note, 'not a plugin directory')
+    f.env.CLAUDE_CODE_PLUGIN_DIRS = note
+    expect(await f.launch()).toEqual([
+      note,
+      join(f.bundle, 'reply-markdown'),
+      join(f.bundle, 'reply-media')
+    ])
+  })
+
+  it('ignores a skills root that is an ordinary file', async () => {
+    const f = fixture()
+    mkdirSync(f.configDir, { recursive: true })
+    writeFileSync(join(f.configDir, 'skills'), 'not a skills directory')
+    expect(await f.launch()).toEqual([
+      join(f.bundle, 'reply-markdown'),
+      join(f.bundle, 'reply-media')
+    ])
+  })
+
+  it('reports the inspection failure cause while preserving an ordinary launch', async () => {
+    const f = fixture()
+    json(join(f.configDir, 'plugins', 'installed_plugins.json'), { version: 1, plugins: {} })
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await f.launch()).toEqual([])
+    expect(warning.mock.calls.flat().join(' ')).toContain(
+      'Unrecognized Claude plugin install metadata'
+    )
+  })
+
   it.each([true, false])(
     'preserves a marketplace module when enabled=%s, including an entry alias',
     async (enabled) => {
