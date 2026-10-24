@@ -20,6 +20,7 @@ test('Claude rich output is opt-in and persists independently of inline images',
     .locator('..')
     .screenshot({ path: testInfo.outputPath('rich-output-off.png'), animations: 'disabled' })
   await toggle.click()
+  await expect(toggle).toBeChecked()
   await expect
     .poll(async () => (await orcaPage.evaluate(() => window.api.settings.get())).claudeRichOutput)
     .toBe(true)
@@ -29,9 +30,17 @@ test('Claude rich output is opt-in and persists independently of inline images',
     .screenshot({ path: testInfo.outputPath('rich-output-on.png'), animations: 'disabled' })
   await orcaPage.reload()
   await waitForSessionReady(orcaPage)
+  await orcaPage.evaluate(() => {
+    const state = window.__store!.getState()
+    state.openSettingsTarget({ pane: 'terminal', repoId: null })
+    state.openSettingsPage()
+  })
+  await expect(toggle).toBeChecked()
   expect((await orcaPage.evaluate(() => window.api.settings.get())).claudeRichOutput).toBe(true)
-  await orcaPage.evaluate(() =>
-    window.__store!.getState().updateSettings({ claudeRichOutput: false })
-  )
+  await toggle.click()
+  await expect(toggle).not.toBeChecked()
+  await expect
+    .poll(async () => (await orcaPage.evaluate(() => window.api.settings.get())).claudeRichOutput)
+    .toBe(false)
   expect((await orcaPage.evaluate(() => window.api.settings.get())).terminalInlineImages).toBe(true)
 })

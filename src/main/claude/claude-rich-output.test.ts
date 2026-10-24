@@ -50,64 +50,72 @@ describe('opt-in Claude rich output', () => {
     ).toBe('0')
   })
 
-  it('resolves modules on the execution host and preserves user plugins without duplicate injection', () => {
+  it('resolves modules on the execution host and preserves user plugins without duplicate injection', async () => {
     const root = bundle()
     const user = join(root, 'user-plugin')
     const env: Record<string, string> = {
+      CLAUDE_CONFIG_DIR: join(root, 'config'),
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CODE_PLUGIN_DIRS: user
     }
-    applyClaudeRichOutputEnv(env, options, [join(root, 'missing-client-path'), root])
+    await applyClaudeRichOutputEnv(env, options, [join(root, 'missing-client-path'), root])
     expect(env.ORCA_CLAUDE_RICH_OUTPUT).toBeUndefined()
     env.ORCA_CLAUDE_RICH_OUTPUT = '1'
-    applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, options, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS.split(delimiter)).toEqual([
       user,
       join(root, 'reply-markdown'),
       join(root, 'reply-media')
     ])
     env.ORCA_CLAUDE_RICH_OUTPUT = '0'
-    applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, options, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(user)
     expect(env.ORCA_CLAUDE_PLUGIN_DIRS).toBeUndefined()
   })
 
-  it('does not pass Windows paths into WSL or silently install when the host bundle is missing', () => {
+  it('does not pass Windows paths into WSL or silently install when the host bundle is missing', async () => {
     const root = bundle()
-    const env: Record<string, string> = { ORCA_CLAUDE_RICH_OUTPUT: '1' }
-    applyClaudeRichOutputEnv(env, { ...options, isWsl: true }, [root])
+    const env: Record<string, string> = {
+      ORCA_CLAUDE_RICH_OUTPUT: '1',
+      CLAUDE_CONFIG_DIR: join(root, 'config')
+    }
+    await applyClaudeRichOutputEnv(env, { ...options, isWsl: true }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBeUndefined()
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     env.ORCA_CLAUDE_RICH_OUTPUT = '1'
-    applyClaudeRichOutputEnv(env, options, [])
+    await applyClaudeRichOutputEnv(env, options, [])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBeUndefined()
     expect(warning).toHaveBeenCalledOnce()
   })
 
-  it('keeps an existing user NeonCoat module instead of loading a second copy', () => {
+  it('keeps an existing user NeonCoat module instead of loading a second copy', async () => {
     const root = bundle()
     const userRoot = bundle()
     const userMarkdown = join(userRoot, 'reply-markdown')
     const env: Record<string, string> = {
+      CLAUDE_CONFIG_DIR: join(root, 'config'),
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CODE_PLUGIN_DIRS: userMarkdown
     }
-    applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, options, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS.split(delimiter)).toEqual([
       userMarkdown,
       join(root, 'reply-media')
     ])
-    applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, options, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(userMarkdown)
   })
 
-  it('keeps an explicit user replacement while stripping a prior Orca overlay', () => {
+  it('keeps an explicit user replacement while stripping a prior Orca overlay', async () => {
     const root = bundle()
-    const env: Record<string, string> = { ORCA_CLAUDE_RICH_OUTPUT: '1' }
-    applyClaudeRichOutputEnv(env, options, [root])
+    const env: Record<string, string> = {
+      ORCA_CLAUDE_RICH_OUTPUT: '1',
+      CLAUDE_CONFIG_DIR: join(root, 'config')
+    }
+    await applyClaudeRichOutputEnv(env, options, [root])
     env.CLAUDE_CODE_PLUGIN_DIRS = 'user-replacement'
     env.ORCA_CLAUDE_RICH_OUTPUT = '0'
-    applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, options, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe('user-replacement')
   })
 })

@@ -35,7 +35,11 @@ at 3× resolution on an opaque background so they remain readable in both termin
 themes. The upstream palette is dark; optionally set `NEONCOAT_MEDIA_THEME=light`
 in Claude's environment settings for a light canvas. This does not recolor images
 that are already in the terminal history. A separately configured module with the
-same plugin name takes precedence over the bundled copy.
+same plugin name takes precedence over the bundled copy. Orca checks the execution
+host's selected Claude profile, applicable marketplace installs, user/project
+skills directories, and explicit plugin paths before adding a bundled module.
+Existing or explicitly disabled copies are reserved, so the switch cannot replace
+or re-enable them. Unreadable plugin metadata leaves the ordinary launch intact.
 
 ## Orca adaptations
 

@@ -1,4 +1,3 @@
-import { applyClaudeRichOutputEnv } from '../../../claude/claude-rich-output'
 import { resolveTerminalInlineImagesEnabled } from '../../../../shared/terminal-inline-images-settings'
 import { resolveSetupAgentSequenceLaunchCommand } from '../../../../shared/setup-agent-sequencing'
 import {
@@ -54,8 +53,6 @@ export function buildPtyHostEnv(
   ) {
     baseEnv.CLAUDE_CODE_FORCE_TERMINAL_IMAGES = '1'
   }
-
-  applyClaudeRichOutputEnv(baseEnv, opts)
 
   const openCodeConfig = captureOpenCodeSourceConfig(baseEnv, opts.userDataPath)
   const launchCommandHint = resolveSetupAgentSequenceLaunchCommand(baseEnv, opts.launchCommand)

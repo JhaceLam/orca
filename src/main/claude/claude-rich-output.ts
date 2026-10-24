@@ -1,8 +1,14 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { getAppEnvironment, hasAppEnvironment } from '../../shared/app-environment'
 import { restoreOrStripOverlayEnv } from '../../shared/agent-overlay-env'
 import type { BuildPtyHostEnvOptions } from '../ipc/pty/host-env/types'
+import { findClaudeRichOutputConflicts } from './claude-rich-output-conflicts'
+
+type ClaudeRichOutputLaunch = Pick<
+  BuildPtyHostEnvOptions,
+  'isPackaged' | 'resourcesPath' | 'launchAgent' | 'isWsl'
+> & { cwd?: string }
 
 const overlay = {
   primary: 'CLAUDE_CODE_PLUGIN_DIRS',
@@ -11,7 +17,7 @@ const overlay = {
   preserveExplicitPrimary: true
 }
 
-function bundledRoots(options: BuildPtyHostEnvOptions): string[] {
+function bundledRoots(options: ClaudeRichOutputLaunch): string[] {
   const roots = options.resourcesPath ? [join(options.resourcesPath, 'claude-rich-output')] : []
   if (hasAppEnvironment()) {
     const appPath = getAppEnvironment().getAppPath()
@@ -22,11 +28,11 @@ function bundledRoots(options: BuildPtyHostEnvOptions): string[] {
   return roots
 }
 
-export function applyClaudeRichOutputEnv(
+export async function applyClaudeRichOutputEnv(
   env: Record<string, string>,
-  options: BuildPtyHostEnvOptions,
+  options: ClaudeRichOutputLaunch,
   roots: readonly string[] = bundledRoots(options)
-): void {
+): Promise<void> {
   const enabled = env.ORCA_CLAUDE_RICH_OUTPUT === '1'
   // The launch intent must not leak into a nested Orca process after this host consumes it.
   delete env.ORCA_CLAUDE_RICH_OUTPUT
@@ -45,28 +51,23 @@ export function applyClaudeRichOutputEnv(
   }
   const source = env.CLAUDE_CODE_PLUGIN_DIRS ?? ''
   const dirs = new Set(source.split(delimiter).filter(Boolean))
-  const installed = new Set<string>()
-  for (const directory of dirs) {
-    try {
-      const manifest: unknown = JSON.parse(
-        readFileSync(join(directory, '.claude-plugin', 'plugin.json'), 'utf8')
-      )
-      if (
-        manifest &&
-        typeof manifest === 'object' &&
-        'name' in manifest &&
-        typeof manifest.name === 'string'
-      ) {
-        installed.add(manifest.name)
-      }
-    } catch {
-      /* Claude owns validation of explicitly configured user plugins. */
-    }
+  let installed: Set<string>
+  try {
+    installed = await findClaudeRichOutputConflicts(env, options.cwd ?? process.cwd())
+  } catch {
+    console.warn(
+      '[claude-rich-output] Could not inspect existing plugins; keeping the ordinary launch'
+    )
+    return
   }
+  const originalSize = dirs.size
   for (const name of ['reply-markdown', 'reply-media']) {
     if (!installed.has(name)) {
       dirs.add(join(root, name))
     }
+  }
+  if (dirs.size === originalSize) {
+    return
   }
   env.CLAUDE_CODE_PLUGIN_DIRS = [...dirs].join(delimiter)
   env.ORCA_CLAUDE_PLUGIN_DIRS = env.CLAUDE_CODE_PLUGIN_DIRS
