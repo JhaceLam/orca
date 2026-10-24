@@ -7,20 +7,10 @@
 // second prints {"dir","count","fps"}.
 import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash, randomUUID } from 'node:crypto'
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  readSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from 'node:fs'
+import { readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { mediaCacheDirectory, privateMediaDirectory } from './media-cache-directory.mjs'
+import { readPngCacheEntry } from './png-cache-entry.mjs'
 import { join, resolve } from 'node:path'
 
 // shortcut: the whole clip is cut at its first play, into at most MAX_FRAMES
@@ -75,29 +65,42 @@ if (process.argv[2] === 'frames') {
     // Missing, unreadable or interrupted cache entries must be regenerated.
   }
   // The temp folder is swept file by file: a cut that lost its end is made again.
-  if (!frames || !existsSync(frame(frames.count))) {
+  if (!frames || !readPngCacheEntry(frame(1)) || !readPngCacheEntry(frame(frames.count))) {
     // A recording may carry no duration (a MediaRecorder webm): the top rate.
     const duration = Number(
       run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', clip])
     )
     const fps =
       duration > 0 ? Math.max(1, Math.min(MAX_FPS, Math.floor(MAX_FRAMES / duration))) : MAX_FPS
-    run('ffmpeg', [
-      '-v',
-      'error',
-      '-y',
-      '-i',
-      clip,
-      '-vf',
-      `fps=${fps},${scale}`,
-      '-frames:v',
-      String(MAX_FRAMES),
-      '-compression_level',
-      '1',
-      join(dir, 'f%05d.png')
-    ])
-    const count = readdirSync(dir).filter((file) => /^f\d{5}\.png$/.test(file)).length
-    frames = { dir, count, fps }
+    const staging = privateMediaDirectory(join(dir, `cut-${process.pid}-${randomUUID()}`))
+    try {
+      run('ffmpeg', [
+        '-v',
+        'error',
+        '-y',
+        '-i',
+        clip,
+        '-vf',
+        `fps=${fps},${scale}`,
+        '-frames:v',
+        String(MAX_FRAMES),
+        '-compression_level',
+        '1',
+        join(staging, 'f%05d.png')
+      ])
+      const files = readdirSync(staging)
+        .filter((file) => /^f\d{5}\.png$/.test(file))
+        .sort()
+      if (!files.length || files.some((file) => !readPngCacheEntry(join(staging, file)))) {
+        throw new Error('Video extraction did not produce complete PNG frames')
+      }
+      for (const file of files) {
+        renameSync(join(staging, file), join(dir, file))
+      }
+      frames = { dir, count: files.length, fps }
+    } finally {
+      rmSync(staging, { recursive: true, force: true })
+    }
     const temporary = `${kept}.${process.pid}.${randomUUID()}.tmp`
     try {
       writeFileSync(temporary, JSON.stringify(frames), { flag: 'wx', mode: 0o600 })
@@ -108,19 +111,26 @@ if (process.argv[2] === 'frames') {
   }
   console.log(JSON.stringify(frames))
 } else {
-  if (!existsSync(frame(1))) {
-    run('ffmpeg', ['-v', 'error', '-y', '-i', clip, '-vf', scale, '-frames:v', '1', frame(1)])
+  const file = join(dir, 'poster.png')
+  let size = readPngCacheEntry(file)
+  if (!size) {
+    const temporary = join(dir, `poster.${process.pid}.${randomUUID()}.png`)
+    try {
+      run('ffmpeg', ['-v', 'error', '-y', '-i', clip, '-vf', scale, '-frames:v', '1', temporary])
+      size = readPngCacheEntry(temporary)
+      if (!size) {
+        throw new Error('Video extraction did not produce a complete PNG poster')
+      }
+      renameSync(temporary, file)
+    } finally {
+      rmSync(temporary, { force: true })
+    }
   }
-  // A PNG's size is in the chunk that follows its signature.
-  const ihdr = Buffer.alloc(24)
-  const fd = openSync(frame(1))
-  readSync(fd, ihdr)
-  closeSync(fd)
   console.log(
     JSON.stringify({
-      file: frame(1),
-      width: ihdr.readUInt32BE(16),
-      height: ihdr.readUInt32BE(20),
+      file,
+      width: size.width,
+      height: size.height,
       clip
     })
   )

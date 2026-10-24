@@ -40,6 +40,14 @@ export async function applyClaudeRichOutputEnv(
   if (options.launchAgent !== 'claude' || !enabled || options.isWsl) {
     return
   }
+  const launchEnv = { ...env }
+  for (const key of ['CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_PLUGIN_DIRS']) {
+    const value = process.env[key]
+    if (launchEnv[key] === undefined && value !== undefined) {
+      launchEnv[key] = value
+    }
+  }
+  restoreOrStripOverlayEnv(launchEnv, overlay)
   const root = roots.find((candidate) =>
     ['reply-markdown', 'reply-media'].every((name) =>
       existsSync(join(candidate, name, '.claude-plugin', 'plugin.json'))
@@ -49,11 +57,11 @@ export async function applyClaudeRichOutputEnv(
     console.warn('[claude-rich-output] Bundled modules unavailable on this execution host')
     return
   }
-  const source = env.CLAUDE_CODE_PLUGIN_DIRS ?? ''
+  const source = launchEnv.CLAUDE_CODE_PLUGIN_DIRS ?? ''
   const dirs = new Set(source.split(delimiter).filter(Boolean))
   let installed: Set<string>
   try {
-    installed = await findClaudeRichOutputConflicts(env, options.cwd ?? process.cwd())
+    installed = await findClaudeRichOutputConflicts(launchEnv, options.cwd ?? process.cwd())
   } catch (error) {
     console.warn(
       '[claude-rich-output] Could not inspect existing plugins; keeping the ordinary launch:',

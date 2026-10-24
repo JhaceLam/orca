@@ -9,6 +9,7 @@ afterEach(() => {
   for (const root of temporary.splice(0)) {
     rmSync(root, { recursive: true, force: true })
   }
+  vi.unstubAllEnvs()
   vi.restoreAllMocks()
 })
 
@@ -48,6 +49,51 @@ function fixture() {
 }
 
 describe('preserving execution-host Claude plugins', () => {
+  it('checks the inherited daemon profile when the pane does not select one', async () => {
+    const f = fixture()
+    vi.stubEnv('CLAUDE_CONFIG_DIR', f.configDir)
+    delete f.env.CLAUDE_CONFIG_DIR
+    json(join(f.configDir, 'settings.json'), { enabledPlugins: { 'reply-media@neoncoat': false } })
+    expect(await f.launch()).toEqual([join(f.bundle, 'reply-markdown')])
+  })
+
+  it('keeps inherited daemon plugin paths and avoids injecting their second copy', async () => {
+    const f = fixture()
+    const userMarkdown = join(f.root, 'user-markdown')
+    f.plugin(userMarkdown, 'reply-markdown')
+    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', userMarkdown)
+    expect(await f.launch()).toEqual([userMarkdown, join(f.bundle, 'reply-media')])
+  })
+
+  it('lets explicit pane and account values override the daemon inheritance', async () => {
+    const f = fixture()
+    const inheritedProfile = join(f.root, 'inherited-profile')
+    json(join(inheritedProfile, 'settings.json'), {
+      enabledPlugins: { 'reply-media@neoncoat': false }
+    })
+    const inheritedMedia = join(f.root, 'inherited-media')
+    f.plugin(inheritedMedia, 'reply-media')
+    vi.stubEnv('CLAUDE_CONFIG_DIR', inheritedProfile)
+    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', inheritedMedia)
+    const explicitMarkdown = join(f.root, 'explicit-markdown')
+    f.plugin(explicitMarkdown, 'reply-markdown')
+    f.env.CLAUDE_CODE_PLUGIN_DIRS = explicitMarkdown
+    expect(await f.launch()).toEqual([explicitMarkdown, join(f.bundle, 'reply-media')])
+    expect(f.env.CLAUDE_CONFIG_DIR).toBe(f.configDir)
+  })
+
+  it('honors an explicit empty plugin list instead of the inherited daemon list', async () => {
+    const f = fixture()
+    const inherited = join(f.root, 'inherited-markdown')
+    f.plugin(inherited, 'reply-markdown')
+    vi.stubEnv('CLAUDE_CODE_PLUGIN_DIRS', inherited)
+    f.env.CLAUDE_CODE_PLUGIN_DIRS = ''
+    expect(await f.launch()).toEqual([
+      join(f.bundle, 'reply-markdown'),
+      join(f.bundle, 'reply-media')
+    ])
+  })
+
   it('ignores a configured plugin entry that is an ordinary file', async () => {
     const f = fixture()
     const note = join(f.root, 'notes.txt')

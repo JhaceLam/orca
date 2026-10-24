@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { mediaCacheDirectory } from './media-cache-directory.mjs'
+import { readPngCacheEntry } from './png-cache-entry.mjs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -109,22 +110,8 @@ function cacheFile(key) {
 
 export function cached(key) {
   const file = cacheFile(key)
-  try {
-    const bytes = readFileSync(file)
-    // A missing/truncated entry must be regenerated, never accepted as blank.
-    if (
-      bytes.length < 45 ||
-      bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' ||
-      bytes.subarray(-8).toString('hex') !== '49454e44ae426082'
-    ) {
-      return undefined
-    }
-    const width = bytes.readUInt32BE(16) / ZOOM,
-      height = bytes.readUInt32BE(20) / ZOOM
-    return width > 0 && height > 0 ? { file, width, height } : undefined
-  } catch {
-    return undefined
-  }
+  const size = readPngCacheEntry(file)
+  return size ? { file, width: size.width / ZOOM, height: size.height / ZOOM } : undefined
 }
 
 export function rasterize(svg, key) {
