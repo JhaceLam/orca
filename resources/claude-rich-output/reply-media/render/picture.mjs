@@ -83,12 +83,15 @@ if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
   }
 }
 
-const ihdr = header(file)
+const size = readPngCacheEntry(file)
+if (!size) {
+  throw new Error(`not a complete PNG: ${path}`)
+}
 console.log(
   JSON.stringify({
     file,
-    width: ihdr.readUInt32BE(16) / zoom,
-    height: ihdr.readUInt32BE(20) / zoom,
+    width: size.width / zoom,
+    height: size.height / zoom,
     path
   })
 )
