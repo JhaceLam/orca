@@ -149,10 +149,13 @@ function kindOf(block: string): { script: Script; source: string } | undefined {
     return { script: 'math', source: formula[1] ?? '' }
   }
 
+  if (!IMAGE.test(block)) {
+    return undefined
+  }
   const path = /\]\(([^)\n]+)\)/.exec(block)?.[1]?.trim() ?? ''
 
   // A file on the network is not fetched: only one on this machine.
-  return /^[a-z][a-z0-9+.-]*:\/\//i.test(path)
+  return path === '' || /^[a-z][a-z0-9+.-]*:\/\//i.test(path)
     ? undefined
     : { script: VIDEO.test(path) ? 'video' : 'picture', source: path }
 }

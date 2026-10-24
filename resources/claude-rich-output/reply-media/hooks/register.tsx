@@ -203,15 +203,23 @@ export const register: Register = (on, options) => {
   // process, so their blocks are rendered here. A new session has none.
   on('session.start', async ($, e, next) => {
     // A reload starts the module over with no timer, but the value is kept.
-    await stop($)
-    const replies = (await $.session.messages()).filter(
-      (message) => message.role === 'assistant' && message.text !== ''
-    )
+    try {
+      await stop($)
+      const replies = (await $.session.messages()).filter(
+        (message) => message.role === 'assistant' && message.text !== ''
+      )
 
-    // `slice(-0)` would keep every reply. A session no terminal draws gets none.
-    const count = e.surface === 'terminal' ? resumedReplies : 0
-    for (const reply of count > 0 ? replies.slice(-count) : []) {
-      await render($, reply.text, drawn)
+      // `slice(-0)` would keep every reply. A session no terminal draws gets none.
+      const count = e.surface === 'terminal' ? resumedReplies : 0
+      for (const reply of count > 0 ? replies.slice(-count) : []) {
+        try {
+          await render($, reply.text, drawn)
+        } catch (error) {
+          $.ui.toast(`Media preview failed: ${String(error)}`)
+        }
+      }
+    } catch (error) {
+      $.ui.toast(`Media preview failed: ${String(error)}`)
     }
 
     return next(e)

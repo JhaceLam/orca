@@ -40,7 +40,7 @@ function fixture() {
     launchAgent: 'claude' as const,
     cwd
   }
-  const launch = async (inheritedEnv: NodeJS.ProcessEnv = process.env) => {
+  const launch = async (inheritedEnv: NodeJS.ProcessEnv = {}) => {
     await applyClaudeRichOutputEnv(env, options, [bundle], inheritedEnv)
     return (env.CLAUDE_CODE_PLUGIN_DIRS ?? '').split(delimiter).filter(Boolean)
   }

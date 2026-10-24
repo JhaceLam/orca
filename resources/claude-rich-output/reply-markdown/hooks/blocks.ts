@@ -119,21 +119,25 @@ export function parse(text: string): Block[] {
       // Closed by a run of the same character at least as long, alone on its line.
       const run = FENCE.exec(line)?.[1] ?? (FORMULA.test(line) ? '$$' : '')
       const isClose = run[0] === fence[0] && run.length >= fence.length && line.trim() === run
-      const [open = '', ...body] = raw.slice(0, -1)
-      const language = open.trim().slice(fence.length).trim().split(/\s+/)[0] ?? ''
-      if (isClose && fence !== '$$' && !(fence === '```' && PICTURED.test(language))) {
-        // A fence still open when the text ends (a reply mid-stream) stays
-        // raw: `raw` holds it from its opening line on.
-        const indent = open.length - open.trimStart().length
-        blocks.push({
-          kind: 'code',
-          language,
-          source: body.map((each) => each.replace(new RegExp(`^\\s{0,${indent}}`), '')).join('\n'),
-          hasGapAbove: hasGapAboveRaw
-        })
-        raw = []
+      if (isClose) {
+        const [open = '', ...body] = raw.slice(0, -1)
+        const language = open.trim().slice(fence.length).trim().split(/\s+/)[0] ?? ''
+        if (fence !== '$$' && !(fence === '```' && PICTURED.test(language))) {
+          // A fence still open when the text ends (a reply mid-stream) stays
+          // raw: `raw` holds it from its opening line on.
+          const indent = open.length - open.trimStart().length
+          blocks.push({
+            kind: 'code',
+            language,
+            source: body
+              .map((each) => each.replace(new RegExp(`^\\s{0,${indent}}`), ''))
+              .join('\n'),
+            hasGapAbove: hasGapAboveRaw
+          })
+          raw = []
+        }
+        fence = undefined
       }
-      fence = isClose ? undefined : fence
     } else if (FENCE.test(line) || FORMULA.test(line)) {
       flush()
       keep(line)
