@@ -107,6 +107,46 @@ it('restores only referenced images after a new renderer replays placeholder tex
   }
 })
 
+it.each([0, 256])(
+  'does not rewrite the replay cache while restoring with %i other placements',
+  async (count) => {
+    let snapshot
+    const first = createPlaceholderTerminal({
+      onKittyImageChanged: (_id, value) => {
+        if (value) {
+          snapshot = value
+        }
+      }
+    })
+    await writeKitty(first.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+    first.terminal.dispose()
+    const changed = vi.fn()
+    const h = createPlaceholderTerminal({
+      readKittyImage: async () => snapshot,
+      onKittyImageChanged: changed
+    })
+    try {
+      if (count) {
+        h.kitty.restoreSnapshot({
+          image: { ...snapshot.image, id: 8 },
+          placements: Array.from({ length: count }, (_, placementId) => ({
+            ...snapshot.placements[0],
+            placementId
+          }))
+        })
+        changed.mockClear()
+      }
+      await write(h.terminal, placeholderCells(7))
+      render(h)
+      await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+      expect(changed).not.toHaveBeenCalled()
+      expect(snapshot.placements).toHaveLength(1)
+    } finally {
+      h.terminal.dispose()
+    }
+  }
+)
+
 it('lets new uploads win over an old asynchronous replay lookup', async () => {
   let finish
   const h = createPlaceholderTerminal({
@@ -128,6 +168,49 @@ it('lets new uploads win over an old asynchronous replay lookup', async () => {
     await Promise.resolve()
     expect(h.kitty.getImage(7)).toBe(current)
     expect(h.kitty._virtualPlacementFor(7, 0).cols).toBe(3)
+  } finally {
+    h.terminal.dispose()
+  }
+})
+
+it('does not resurrect an old lookup when the replacement upload is evicted before it returns', async () => {
+  const saved = new Map()
+  const changed = (id, snapshot) => {
+    if (snapshot) {
+      saved.set(id, snapshot)
+    } else {
+      saved.delete(id)
+    }
+  }
+  const first = createPlaceholderTerminal({ onKittyImageChanged: changed })
+  await writeKitty(first.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+  const old = saved.get(7)
+  first.terminal.dispose()
+  let finish
+  const read = vi
+    .fn(async (id) => saved.get(id))
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+  const h = createPlaceholderTerminal({ readKittyImage: read, onKittyImageChanged: changed })
+  try {
+    await write(h.terminal, placeholderCells(7))
+    render(h)
+    await writeKitty(h.terminal, 'a=T,f=100,i=7,U=1,c=3,r=1', PNG)
+    vi.spyOn(h.storage, 'getLimit').mockReturnValue(old.image.data.size / 1000000)
+    await writeKitty(h.terminal, 'a=T,f=100,i=8,U=1,c=2,r=2', PNG)
+    expect(h.kitty.getImage(7)).toBeUndefined()
+    finish(old)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(h.kitty.getImage(7)).toBeUndefined()
+    render(h)
+    await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+    expect(h.kitty._virtualPlacementFor(7, 0).cols).toBe(3)
+    expect(read).toHaveBeenCalledTimes(2)
   } finally {
     h.terminal.dispose()
   }
