@@ -125,7 +125,12 @@ it.skipIf(process.platform === 'win32')(
   'selects the original path groups, including deletions and renames',
   () => {
     const directory = mkdtempSync(join(tmpdir(), 'orca-zcode-workflow-'))
-    const git = (args) => execFileSync('git', args, { cwd: directory, stdio: 'pipe' })
+    const git = (args) =>
+      execFileSync(
+        'git',
+        ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', ...args],
+        { cwd: directory, stdio: 'pipe' }
+      )
     const write = (file, value) => {
       mkdirSync(dirname(join(directory, file)), { recursive: true })
       writeFileSync(join(directory, file), value)
@@ -134,17 +139,7 @@ it.skipIf(process.platform === 'win32')(
     const commit = () => {
       git(['add', '-A'])
       const tree = git(['write-tree']).toString().trim()
-      parent = git([
-        '-c',
-        'user.name=Fixture',
-        '-c',
-        'user.email=fixture@example.test',
-        'commit-tree',
-        tree,
-        ...(parent ? ['-p', parent] : []),
-        '-m',
-        'fixture'
-      ])
+      parent = git(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', 'fixture'])
         .toString()
         .trim()
       git(['update-ref', 'HEAD', parent])
@@ -166,6 +161,9 @@ it.skipIf(process.platform === 'win32')(
       git(['init', '-q'])
       write('README.md', 'fixture')
       commit()
+      expect(git(['reflog', 'show', '--format=%gn <%ge>', '-1', 'HEAD']).toString().trim()).toBe(
+        'Fixture <fixture@example.test>'
+      )
       expect(executeScope(directory)).toEqual({ account: 'true', credentials: 'true' })
       for (const [file, runsAccount, runsCredentials] of cases) {
         write(file, 'first')
