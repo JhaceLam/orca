@@ -15,8 +15,20 @@ export async function run<T>(
     .run(['node', `${$.plugin.root}/render/${script}.mjs`, ...args], init)
     .catch((error: unknown) => ({ exitCode: 1, stdout: '', stderr: String(error) }))
   if (ran.exitCode === 0) {
-    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: only the bundled renderer scripts produce this JSON; errors use the nonzero exit path.
-    return JSON.parse(ran.stdout) as T
+    try {
+      const result: unknown = JSON.parse(ran.stdout)
+      if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+        return { error: 'renderer printed an invalid JSON object' }
+      }
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: bundled renderer records implement T; malformed and non-record output is rejected above.
+      return result as T
+    } catch {
+      return {
+        error:
+          ran.stderr.trim().split('\n').at(-1) ||
+          (ran.stdout.trim() ? 'renderer printed invalid JSON' : 'renderer printed no result')
+      }
+    }
   }
 
   // More than one `Error:` when the tool a script ran opens its own message

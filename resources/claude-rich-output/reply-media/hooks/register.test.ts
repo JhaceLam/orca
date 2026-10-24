@@ -58,6 +58,118 @@ const reply = async ($: Engine, uuid: string, text = TEXT) => {
   })
 }
 
+for (const stdout of ['', '{broken', 'null', '[]']) {
+  test(`invalid renderer output ${JSON.stringify(stdout)} preserves the reply and shows a retry`, async ($, on) => {
+    on('process.run', () => ({ value: { ...RAN, stdout } }))
+    const drawn = engine(on)
+    const ui = await reply($, `invalid-json-${stdout}`)
+    expect(drawn).toEqual(['Before', 'After'])
+    expect(await ui.find({ type: 'Image' })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^✗ not drawn: renderer printed/ })).toBeDefined()
+    expect(await ui.find({ type: 'Button', label: 'retry' })).toBeDefined()
+    await ui.unmount()
+  })
+}
+
+for (const failure of ['stat', 'read']) {
+  test(`a paused video survives its selected frame disappearing during ${failure}`, async ($, on) => {
+    const clock = mock.clock(on)
+    let swept = false
+    const reads: string[] = []
+    const poster = '/tmp/paused-poster.png'
+    const gone = '/tmp/paused-frames/f00002.png'
+    on('process.run', () => ({
+      value: {
+        ...RAN,
+        stdout: JSON.stringify({
+          ...DIAGRAM,
+          file: poster,
+          clip: '/work/paused.mp4',
+          frames: { dir: '/tmp/paused-frames', count: 4, fps: 10 }
+        })
+      }
+    }))
+    engine(on, false)
+    on('fs.stat', (_, e) =>
+      swept && e.path === gone && failure === 'stat'
+        ? { deny: 'ENOENT: frame was swept' }
+        : { value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }
+    )
+    on('fs.read', (_, e) => {
+      reads.push(e.path)
+      return swept && e.path === gone && failure === 'read'
+        ? { deny: 'ENOENT: frame was swept after stat' }
+        : { value: { base64: PNG } }
+    })
+    on('ui.blit', () => ({ value: {} }))
+    const text = 'Before\n\n![paused](paused.mp4)\n\nAfter'
+    const ui = await reply($, `paused-${failure}`, text)
+    const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+    await ui.press({ key })
+    await clock.settle()
+    await clock.advance(200)
+    await ui.press({ key })
+    await ui.unmount()
+    swept = true
+    reads.length = 0
+    const restored = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    expect(await restored.find({ type: 'Image' })).toBeDefined()
+    expect(await restored.find({ type: 'Button', label: '▶ play' })).toBeDefined()
+    expect(reads).toContain(poster)
+    await restored.unmount()
+  })
+
+  test(`a playing video stops when a frame disappears during ${failure}`, async ($, on) => {
+    const clock = mock.clock(on)
+    let swept = false
+    let blits = 0
+    const gone = '/tmp/playing-frames/f00001.png'
+    on('process.run', () => ({
+      value: {
+        ...RAN,
+        stdout: JSON.stringify({
+          ...DIAGRAM,
+          file: '/tmp/playing-poster.png',
+          clip: '/work/playing.mp4',
+          frames: { dir: '/tmp/playing-frames', count: 4, fps: 10 }
+        })
+      }
+    }))
+    engine(on, false)
+    on('fs.stat', (_, e) =>
+      swept && e.path === gone && failure === 'stat'
+        ? { deny: 'ENOENT: frame was swept' }
+        : { value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }
+    )
+    on('fs.read', (_, e) =>
+      swept && e.path === gone && failure === 'read'
+        ? { deny: 'ENOENT: frame was swept after stat' }
+        : { value: { base64: PNG } }
+    )
+    on('ui.blit', () => {
+      blits++
+      return { value: {} }
+    })
+    const ui = await reply($, `playing-${failure}`, '![playing](playing.mp4)')
+    const key = String((await ui.find({ type: 'Button', label: '▶ play' }))?.props.key)
+    await ui.press({ key })
+    await clock.settle()
+    expect(await ui.find({ type: 'Button', label: '❚❚ pause' })).toBeDefined()
+    swept = true
+    await clock.advance(100)
+    expect(await ui.find({ type: 'Button', label: '▶ play' })).toBeDefined()
+    expect(await ui.find({ type: 'Image' })).toBeDefined()
+    await clock.advance(500)
+    expect(blits).toBe(0)
+    await ui.unmount()
+  })
+}
+
 test('a mermaid fence of a reply is drawn as an Image once rendered', async ($, on) => {
   const ran: (readonly string[])[] = []
   on('process.run', (_, e) => {

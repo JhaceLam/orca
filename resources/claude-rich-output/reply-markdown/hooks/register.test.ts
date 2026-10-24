@@ -41,6 +41,20 @@ const mount = ($: Engine, text: string) =>
     props: { text, isFirstOfReply: true }
   })
 
+test('heading closing markers preserve hashes that belong to the title', async ($, on) => {
+  engine(on)
+  for (const [source, title] of [
+    ['## Learning C#', 'Learning C#'],
+    ['## Learning F#   ', 'Learning F#'],
+    ['## Learning C# ###', 'Learning C#'],
+    ['## Topic ###', 'Topic']
+  ]) {
+    const ui = await mount($, source!)
+    expect(await ui.find({ type: 'Text', text: `▌ ${title}` })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
 test('prose deletion is styled while inline and fenced code remain literal', async ($, on) => {
   engine(on)
   const literal = '**This is not bold inside this block**\n`sss`\n~~literal~~\n$' + 'x^2$'

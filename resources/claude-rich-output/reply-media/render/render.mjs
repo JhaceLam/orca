@@ -3,7 +3,7 @@
 // the size in CSS px. Needs `rsvg-convert` (brew install librsvg) on PATH.
 import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -175,7 +175,7 @@ export function withModelOrder(url, context, nextLoad) {
   return { ...loaded, source }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   // Loaded here, not imported above: the hook must be in place first, and
   // math.mjs, which imports this file, needs no mermaid.
   registerHooks({ load: withModelOrder })

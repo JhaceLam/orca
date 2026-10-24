@@ -58,17 +58,20 @@ describe('opt-in Claude rich output', () => {
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CODE_PLUGIN_DIRS: user
     }
-    await applyClaudeRichOutputEnv(env, options, [join(root, 'missing-client-path'), root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [
+      join(root, 'missing-client-path'),
+      root
+    ])
     expect(env.ORCA_CLAUDE_RICH_OUTPUT).toBeUndefined()
     env.ORCA_CLAUDE_RICH_OUTPUT = '1'
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS.split(delimiter)).toEqual([
       user,
       join(root, 'reply-markdown'),
       join(root, 'reply-media')
     ])
     env.ORCA_CLAUDE_RICH_OUTPUT = '0'
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(user)
     expect(env.ORCA_CLAUDE_PLUGIN_DIRS).toBeUndefined()
   })
@@ -79,11 +82,11 @@ describe('opt-in Claude rich output', () => {
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CONFIG_DIR: join(root, 'config')
     }
-    await applyClaudeRichOutputEnv(env, { ...options, isWsl: true }, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root, isWsl: true }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBeUndefined()
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
     env.ORCA_CLAUDE_RICH_OUTPUT = '1'
-    await applyClaudeRichOutputEnv(env, options, [])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBeUndefined()
     expect(warning).toHaveBeenCalledOnce()
   })
@@ -97,12 +100,12 @@ describe('opt-in Claude rich output', () => {
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CODE_PLUGIN_DIRS: userMarkdown
     }
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS.split(delimiter)).toEqual([
       userMarkdown,
       join(root, 'reply-media')
     ])
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(userMarkdown)
   })
 
@@ -112,10 +115,10 @@ describe('opt-in Claude rich output', () => {
       ORCA_CLAUDE_RICH_OUTPUT: '1',
       CLAUDE_CONFIG_DIR: join(root, 'config')
     }
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     env.CLAUDE_CODE_PLUGIN_DIRS = 'user-replacement'
     env.ORCA_CLAUDE_RICH_OUTPUT = '0'
-    await applyClaudeRichOutputEnv(env, options, [root])
+    await applyClaudeRichOutputEnv(env, { ...options, cwd: root }, [root])
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe('user-replacement')
   })
 })

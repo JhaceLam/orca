@@ -168,12 +168,17 @@ async function startVideo(
       own.cancel()
     }
     stoppedAt.set(block, shown)
-    const blit = await $.ui
-      .blit({ requestId: site, key, source: await imageSource($, frameFile(frames, shown)) })
-      .catch(() => ({ deny: 'failed' }))
-    // Denied when no Image is mounted to swap: the row scrolled away.
-    if (timer === own && (isLast || blit.deny !== undefined)) {
-      await stop($)
+    try {
+      const source = await imageSource($, frameFile(frames, shown))
+      const blit = await $.ui.blit({ requestId: site, key, source })
+      // Denied when no Image is mounted to swap: the row scrolled away.
+      if (timer === own && (isLast || blit.deny !== undefined)) {
+        await stop($)
+      }
+    } catch {
+      if (timer === own) {
+        await stop($)
+      }
     }
   })
   timer = own
@@ -367,6 +372,19 @@ export const register: Register = (on, options) => {
       const site = e.requestId
       const isPlaying = clip !== undefined && (await read($, playing)) === block
       const isPreparing = clip !== undefined && (await read($, preparing)) === block
+      const current = frames === undefined ? file : frameFile(frames, stoppedAt.get(block) ?? 0)
+      const source = await imageSource($, current).catch(() =>
+        current === file ? undefined : imageSource($, file).catch(() => undefined)
+      )
+      if (!source) {
+        const props = {
+          ...e.props,
+          text: block,
+          isFirstOfReply: e.props.isFirstOfReply && children.length === 0
+        }
+        children.push(await next({ ...e, props }))
+        continue
+      }
       children.push(
         <Box flexDirection="column" paddingLeft={indent} marginTop={1}>
           <Image
@@ -374,10 +392,7 @@ export const register: Register = (on, options) => {
             key={clip === undefined ? undefined : `view:${key}`}
             // It shows the frame it stopped at, so a redraw does not rewind
             // it; before its first play, its first frame.
-            source={await imageSource(
-              $,
-              frames === undefined ? file : frameFile(frames, stoppedAt.get(block) ?? 0)
-            )}
+            source={source}
             columns={columns}
             rows={rows}
             alt={alt}

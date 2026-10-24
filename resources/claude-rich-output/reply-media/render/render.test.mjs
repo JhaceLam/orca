@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { registerHooks } from 'node:module'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
@@ -50,8 +51,8 @@ test('flatten resolves var() and color-mix() to hex and drops font imports', () 
 })
 
 /** Runs render.mjs on `source` and asserts that it drew a picture. */
-const draws = (source) => {
-  const ran = spawnSync('node', [join(import.meta.dirname, 'render.mjs')], {
+const draws = (source, entry = join(import.meta.dirname, 'render.mjs')) => {
+  const ran = spawnSync('node', [entry], {
     input: source,
     encoding: 'utf8'
   })
@@ -74,6 +75,17 @@ const SAMPLES = {
   'xychart-beta': 'xychart-beta\n  x-axis [a, b]\n  bar [1, 2]'
 }
 
+test('the renderer runs through a symlinked plugin directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orca-render-link-'))
+  try {
+    const link = join(root, 'linked render')
+    symlinkSync(import.meta.dirname, link, process.platform === 'win32' ? 'junction' : 'dir')
+    draws(SAMPLES.flowchart, join(link, 'render.mjs'))
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('every diagram type the Diagrams note names is drawn', () => {
   // The note as Claude reads it: in the hooks module, not a copy.
   const hooks = readFileSync(join(import.meta.dirname, '..', 'hooks', 'blocks.ts'), 'utf8')
@@ -82,7 +94,7 @@ test('every diagram type the Diagrams note names is drawn', () => {
     .split(', ')
 
   assert.deepEqual(types?.toSorted(), Object.keys(SAMPLES).toSorted())
-  Object.values(SAMPLES).forEach(draws)
+  Object.values(SAMPLES).forEach((source) => draws(source))
 })
 
 test('an init directive, a comment and a line break in a label are drawn', () => {

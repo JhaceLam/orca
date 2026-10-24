@@ -29,7 +29,7 @@ const PICTURED = /^(mermaid|math)$/
 // lines between are kept as text too, though one may look like a list item.
 export const FORMULA = /^\$\$[ \t]*$/
 const RULE = /^ {0,3}([-*_])( *\1){2,} *$/
-const HEADING = /^(#{1,6})\s+(.+?)[\s#]*$/
+const HEADING = /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
 const QUOTE = /^ {0,3}> ?(.*)$/
 // A table's second line: `| --- | :-: |`, its colons the columns' alignment.
