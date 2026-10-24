@@ -163,6 +163,8 @@ const commonExtraResources = [
   skillFreshnessResources,
   nativeChatVisualsResource,
   { from: 'out/claude-rich-output', to: 'claude-rich-output' },
+  // electron-builder excludes a source directory's root node_modules.
+  { from: 'out/claude-rich-output/node_modules', to: 'claude-rich-output/node_modules' },
   emojiShortcodeDatasetResource
 ]
 // Why: native speech addons must be real files outside app.asar; copy only the

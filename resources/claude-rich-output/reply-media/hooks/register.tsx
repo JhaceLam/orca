@@ -83,11 +83,20 @@ async function startVideo(
 
   // Cut at the first play, not when the reply arrives: it takes seconds and
   // disk, and most clips shown are never played.
-  if (diagram.frames === undefined) {
+  const known =
+    diagram.frames !== undefined &&
+    !(await isGone($, frameFile(diagram.frames, 0))) &&
+    !(await isGone($, frameFile(diagram.frames, diagram.frames.count - 1)))
+      ? diagram.frames
+      : undefined
+  if (request !== playRequest) {
+    return
+  }
+  if (known === undefined) {
     $.ui.toast('Cutting the video into frames…')
   }
   const frames =
-    diagram.frames ??
+    known ??
     (await run<Frames>($, ['video', 'frames'], { stdin: diagram.clip, timeoutMs: 120_000 }))
   if (request !== playRequest) {
     return
