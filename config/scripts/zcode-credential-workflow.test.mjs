@@ -130,18 +130,24 @@ it.skipIf(process.platform === 'win32')(
       mkdirSync(dirname(join(directory, file)), { recursive: true })
       writeFileSync(join(directory, file), value)
     }
+    let parent
     const commit = () => {
       git(['add', '-A'])
-      git([
+      const tree = git(['write-tree']).toString().trim()
+      parent = git([
         '-c',
         'user.name=Fixture',
         '-c',
         'user.email=fixture@example.test',
-        'commit',
-        '--allow-empty',
-        '-qm',
+        'commit-tree',
+        tree,
+        ...(parent ? ['-p', parent] : []),
+        '-m',
         'fixture'
       ])
+        .toString()
+        .trim()
+      git(['update-ref', 'HEAD', parent])
     }
     const cases = [
       ['src/main/zcode/credentials.ts', true, true],
