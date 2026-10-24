@@ -133,6 +133,34 @@ it('lets new uploads win over an old asynchronous replay lookup', async () => {
   }
 })
 
+it('recovers again after a restored encoded payload is evicted by the byte budget', async () => {
+  let snapshot
+  const first = createPlaceholderTerminal({
+    onKittyImageChanged: (_id, image) => {
+      if (image) {
+        snapshot = image
+      }
+    }
+  })
+  await writeKitty(first.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+  first.terminal.dispose()
+  const read = vi.fn(async () => snapshot)
+  const second = createPlaceholderTerminal({ readKittyImage: read })
+  try {
+    vi.spyOn(second.storage, 'getLimit').mockReturnValue(snapshot.image.data.size / 1000000)
+    await write(second.terminal, placeholderCells(7))
+    for (let attempt = 0; attempt < 3; attempt++) {
+      render(second)
+      await vi.waitFor(() => expect(second.kitty.getImage(7)).toBeDefined())
+      expect(read).toHaveBeenCalledTimes(attempt + 1)
+      await writeKitty(second.terminal, `a=T,f=100,i=${8 + attempt},U=1,c=2,r=2`, PNG)
+      expect(second.kitty.getImage(7)).toBeUndefined()
+    }
+  } finally {
+    second.terminal.dispose()
+  }
+})
+
 it('bounds recovery when visible prototypes exceed the decoded-pixel budget', async () => {
   const h = createPlaceholderTerminal()
   try {
@@ -152,5 +180,34 @@ it('bounds recovery when visible prototypes exceed the decoded-pixel budget', as
     expect(h.storage.getUsage()).toBeLessThanOrEqual(0.0008)
   } finally {
     h.terminal.dispose()
+  }
+})
+
+it('bounds replay reads when visible payloads exceed the encoded-byte budget', async () => {
+  const saved = new Map()
+  const first = createPlaceholderTerminal({
+    onKittyImageChanged: (id, image) => {
+      if (image) {
+        saved.set(id, image)
+      }
+    }
+  })
+  for (const id of [7, 8]) {
+    await writeKitty(first.terminal, `a=T,f=100,i=${id},U=1,c=2,r=2`, PNG)
+  }
+  first.terminal.dispose()
+  const read = vi.fn(async (id) => saved.get(id))
+  const second = createPlaceholderTerminal({ readKittyImage: read })
+  try {
+    vi.spyOn(second.storage, 'getLimit').mockReturnValue(saved.get(7).image.data.size / 1000000)
+    await write(second.terminal, `${placeholderCells(7)}\r\n${placeholderCells(8)}`)
+    for (let frame = 0; frame < 20; frame++) {
+      render(second)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(second.kitty.images.size).toBeLessThanOrEqual(1)
+  } finally {
+    second.terminal.dispose()
   }
 })
