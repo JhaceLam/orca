@@ -48,6 +48,8 @@ or re-enable them. Unreadable plugin metadata leaves the ordinary launch intact.
 - Atomic, versioned formula cache; coalesced requests; a 30-second render timeout
   with one retry for an aborted process.
 - Inline PNG transport for small images and video frames across remote sessions.
+- Native responses are committed before optional preview conversion; mounted rows
+  update when the preview is ready.
 - Asynchronous video loading with cancellation and visible retry states.
 - Non-macOS conversion through ffmpeg; no unconditional macOS viewer command.
 - Literal code fences remain literal, including backticks and bold markers.

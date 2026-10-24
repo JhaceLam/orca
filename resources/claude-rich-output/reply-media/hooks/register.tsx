@@ -4,65 +4,14 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Diagram, Frames } from '../types'
 import { KINDS, forms, hash, BLOCK, classify } from './blocks'
-import type { Script } from './blocks'
+import { render } from './diagrams'
 
+// Atom addresses must be file-local for the hook scanner; the renderer uses the same key.
 const diagrams = atom({ plugin: 'reply-media', key: 'diagrams' } as const, {})
 const zoomed = atom({ plugin: 'reply-media', key: 'zoomed' } as const, null)
 const playing = atom({ plugin: 'reply-media', key: 'playing' } as const, null)
 const preparing = atom({ plugin: 'reply-media', key: 'preparing' } as const, null)
 const PANE = 'picture-zoom'
-// Node/MathJax cold starts on a shared devbox can outlast five seconds.
-// Keep a finite bound and retry only a killed, transient timeout once.
-const RENDER_TIMEOUT_MS = 30_000
-const pendingRenders = new Map<string, Promise<void>>()
-
-/**
- * Renders each block of `text` that has no outcome yet, and records it;
- * `isForced` renders the ones that have an outcome too.
- */
-async function render(
-  $: EngineInterface,
-  text: string,
-  drawn: ReadonlySet<Script>,
-  isForced = false
-) {
-  const cwd = await $.session.cwd()
-
-  for (const [block] of text.matchAll(BLOCK)) {
-    const job = classify(block, drawn)
-    // An image or a video is read again each time it is shown: the file
-    // behind an unchanged path may be a new one.
-    const isFile = job?.script === 'picture' || job?.script === 'video'
-    const known = await read($, diagrams)
-    if (job === undefined || (!isFile && !isForced && known[block] && !('error' in known[block]))) {
-      continue
-    }
-
-    // Append, resume and a retry button may request the same block together.
-    // Share that render instead of racing writers or multiplying cold starts.
-    const key = JSON.stringify([cwd, block])
-    const pending = pendingRenders.get(key)
-    if (pending) {
-      await pending
-      continue
-    }
-    const task = (async () => {
-      const init = { stdin: job.source, timeoutMs: RENDER_TIMEOUT_MS, cwd }
-      let outcome = await run<Diagram>($, [job.script], init)
-      if ('error' in outcome && /aborted: still running after \d+ms/.test(outcome.error)) {
-        outcome = await run<Diagram>($, [job.script], init)
-      }
-      await update($, diagrams, (all) => ({ ...all, [block]: outcome }))
-    })()
-    pendingRenders.set(key, task)
-    try {
-      await task
-    } finally {
-      pendingRenders.delete(key)
-    }
-  }
-}
-
 // Blocks whose swept picture was drawn again since this load: once each, so
 // that a file which cannot be made again is not tried at every draw.
 const redrawn = new Set<string>()
@@ -220,18 +169,32 @@ export const register: Register = (on, options) => {
   })
 
   on('session.append', { door: 'response' }, async ($, e, next) => {
-    // A picture no terminal draws is not worth its render.
-    if (!(await $.session.surfaces()).includes('terminal')) {
-      return next(e)
+    const appended = await next(e)
+    const content = appended.message?.content
+    if (
+      !content?.some((block) => typeof block.text === 'string' && block.text.search(BLOCK) !== -1)
+    ) {
+      return appended
     }
 
-    for (const block of e.message.content) {
-      if (typeof block.text === 'string') {
-        await render($, block.text, drawn)
+    // Keep optional converters off the transcript/model critical path. The host
+    // owns this timer and cancels it when the plugin reloads.
+    $.clock.after(0, async () => {
+      try {
+        if (!(await $.session.surfaces()).includes('terminal')) {
+          return
+        }
+        for (const block of content) {
+          if (typeof block.text === 'string') {
+            await render($, block.text, drawn)
+          }
+        }
+      } catch (error) {
+        $.ui.toast(`Media preview failed: ${String(error)}`)
       }
-    }
+    })
 
-    return next(e)
+    return appended
   })
 
   // The replies a resumed session opens with were appended by an earlier

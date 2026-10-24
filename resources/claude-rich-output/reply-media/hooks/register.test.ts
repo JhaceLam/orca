@@ -16,11 +16,29 @@ const RAN = {
   isStderrTruncated: false
 }
 
+const clocks = new WeakMap<Engine, ReturnType<typeof mock.clock>>()
+const clockFor = ($: Engine, on: On) => {
+  let clock = clocks.get($)
+  if (!clock) {
+    clock = mock.clock(on)
+    clocks.set($, clock)
+  }
+  return clock
+}
+
+/** Visual cases wait for optional background rendering, separately from the native append. */
+const append = async ($: Engine, input: Parameters<Engine['session']['append']>[0]) => {
+  const result = await $.session.append(input)
+  await clocks.get($)?.settle()
+  return result
+}
+
 /**
  * Stands for the engine beneath the mod: a session in /work drawn on a
  * terminal, and a record of the text it is asked to draw.
  */
-const engine = (on: On, fileMocks = true) => {
+const engine = ($: Engine, on: On, fileMocks = true) => {
+  clockFor($, on)
   const drawn: string[] = []
   if (fileMocks) {
     on('fs.read', () => ({ value: { base64: PNG } }))
@@ -39,7 +57,7 @@ const engine = (on: On, fileMocks = true) => {
 
 /** Appends the reply as the model's, then draws its row on the terminal. */
 const reply = async ($: Engine, uuid: string, text = TEXT) => {
-  await $.session.append({
+  await append($, {
     door: 'response',
     origin: { kind: 'model', model: 'test' },
     uuid,
@@ -61,7 +79,7 @@ const reply = async ($: Engine, uuid: string, text = TEXT) => {
 for (const stdout of ['', '{broken', 'null', '[]']) {
   test(`invalid renderer output ${JSON.stringify(stdout)} preserves the reply and shows a retry`, async ($, on) => {
     on('process.run', () => ({ value: { ...RAN, stdout } }))
-    const drawn = engine(on)
+    const drawn = engine($, on)
     const ui = await reply($, `invalid-json-${stdout}`)
     expect(drawn).toEqual(['Before', 'After'])
     expect(await ui.find({ type: 'Image' })).toBeUndefined()
@@ -73,7 +91,7 @@ for (const stdout of ['', '{broken', 'null', '[]']) {
 
 for (const failure of ['stat', 'read']) {
   test(`a paused video survives its selected frame disappearing during ${failure}`, async ($, on) => {
-    const clock = mock.clock(on)
+    const clock = clockFor($, on)
     let swept = false
     const reads: string[] = []
     const poster = '/tmp/paused-poster.png'
@@ -89,7 +107,7 @@ for (const failure of ['stat', 'read']) {
         })
       }
     }))
-    engine(on, false)
+    engine($, on, false)
     on('fs.stat', (_, e) =>
       swept && e.path === gone && failure === 'stat'
         ? { deny: 'ENOENT: frame was swept' }
@@ -125,7 +143,7 @@ for (const failure of ['stat', 'read']) {
   })
 
   test(`a playing video stops when a frame disappears during ${failure}`, async ($, on) => {
-    const clock = mock.clock(on)
+    const clock = clockFor($, on)
     let swept = false
     let blits = 0
     const gone = '/tmp/playing-frames/f00001.png'
@@ -140,7 +158,7 @@ for (const failure of ['stat', 'read']) {
         })
       }
     }))
-    engine(on, false)
+    engine($, on, false)
     on('fs.stat', (_, e) =>
       swept && e.path === gone && failure === 'stat'
         ? { deny: 'ENOENT: frame was swept' }
@@ -178,7 +196,7 @@ test('a mermaid fence of a reply is drawn as an Image once rendered', async ($, 
 
     return { value: { ...RAN, stdout: JSON.stringify(diagram) } }
   })
-  const drawn = engine(on)
+  const drawn = engine($, on)
   const ui = await reply($, 'row-1')
   const image = await ui.find({ type: 'Image' })
 
@@ -197,6 +215,7 @@ test('a mermaid fence of a reply is drawn as an Image once rendered', async ($, 
 })
 
 test('a reply that opens with a picture has its bullet beside the picture', async ($, on) => {
+  clockFor($, on)
   const firsts: boolean[] = []
   on('fs.read', () => ({ value: { base64: PNG } }))
   on('fs.stat', () => ({ value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }))
@@ -222,7 +241,7 @@ test('a fence that did not render is boxed in the error color, with its reason',
   const stderr =
     'file:///mod/render/render.mjs:102\n  rasterize(\n  ^\n\nError: Error: bad diagram\n    at file:///mod/render/render.mjs:102:3\n'
   on('process.run', () => ({ value: { ...RAN, exitCode: 1, stderr } }))
-  const drawn = engine(on)
+  const drawn = engine($, on)
   const ui = await reply($, 'row-2')
 
   expect(await ui.find({ type: 'Image' })).toBeUndefined()
@@ -240,7 +259,7 @@ test('a fence that did not render is boxed in the error color, with its reason',
 })
 
 test('a picture whose file was swept is drawn again from its block', async ($, on) => {
-  const clock = mock.clock(on)
+  const clock = clockFor($, on)
   let ran = 0
   on('process.run', () => {
     // The reply's own render, then the one that makes the swept picture again.
@@ -249,7 +268,7 @@ test('a picture whose file was swept is drawn again from its block', async ($, o
 
     return { value: { ...RAN, stdout: JSON.stringify({ ...DIAGRAM, file }) } }
   })
-  engine(on, false)
+  engine($, on, false)
   on('fs.read', () => ({ value: { base64: PNG } }))
   on('fs.stat', (_, e) =>
     e.path === '/tmp/swept.png'
@@ -265,7 +284,7 @@ test('a picture whose file was swept is drawn again from its block', async ($, o
 })
 
 test('a cached render failure can be retried after repairing the renderer', async ($, on) => {
-  const clock = mock.clock(on)
+  const clock = clockFor($, on)
   let calls = 0
   on('process.run', () => ({
     value:
@@ -273,7 +292,7 @@ test('a cached render failure can be retried after repairing the renderer', asyn
         ? { ...RAN, exitCode: 1, stderr: 'Error: XML parse error' }
         : { ...RAN, stdout: JSON.stringify(DIAGRAM) }
   }))
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'row-retry')
   const retry = await ui.find({ type: 'Button', text: 'retry' })
   expect(retry).toBeDefined()
@@ -296,7 +315,7 @@ test('a transient renderer timeout retries once with a cold-start budget', async
     }
     return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
   })
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'transient-timeout')
   expect(budgets).toEqual([30_000, 30_000])
   expect(await ui.find({ type: 'Image' })).toBeDefined()
@@ -309,7 +328,7 @@ test('repeated timeouts stop after two attempts and remain visible', async ($, o
     calls++
     return { deny: 'reply-media: $.process.run(node) aborted: still running after 30000ms' }
   })
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'persistent-timeout')
   expect(calls).toBe(2)
   expect(await ui.find({ type: 'Image' })).toBeUndefined()
@@ -322,7 +341,7 @@ test('a genuine renderer error is not retried or hidden', async ($, on) => {
     calls++
     return { value: { ...RAN, exitCode: 1, stderr: 'Error: Undefined control sequence' } }
   })
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'invalid-formula')
   expect(calls).toBe(1)
   expect(
@@ -336,7 +355,7 @@ test('the same block repeated within a reply is rendered only once', async ($, o
     calls++
     return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
   })
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'duplicate-block', `${TEXT}\n\n${TEXT}`)
   expect(calls).toBe(1)
   expect(await ui.findAll({ type: 'Image' })).toHaveLength(2)
@@ -348,7 +367,7 @@ test('the same block repeated within a reply is rendered only once', async ($, o
  */
 const resume = async ($: Engine, on: On, surface: 'terminal' | null = 'terminal') => {
   const rendered: (string | undefined)[] = []
-  engine(on)
+  engine($, on)
   on('session.messages', () => ({
     value: [
       { role: 'user' as const, text: 'draw them', toolUses: [] },
@@ -402,7 +421,7 @@ const MIXED = [
 
 /** Appends `text` as the model's reply, then draws its row on the terminal. */
 const show = async ($: Engine, text: string) => {
-  await $.session.append({
+  await append($, {
     door: 'response',
     origin: { kind: 'model', model: 'test' },
     uuid: 'row-mixed',
@@ -424,7 +443,7 @@ test('formulas and local images are drawn too, each by its own script', async ($
 
     return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
   })
-  const drawn = engine(on)
+  const drawn = engine($, on)
   const ui = await show($, MIXED)
 
   expect(ran).toEqual([
@@ -448,7 +467,7 @@ test(
   { options: { pxPerColumn: 16, cellAspect: 2 } },
   async ($, on) => {
     on('process.run', () => ({ value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }))
-    engine(on)
+    engine($, on)
     const ui = await reply($, 'row-sized')
 
     // 800 px at 16 px a column is 50 columns, so 12.5 rows on cells twice as
@@ -481,6 +500,7 @@ test('tells Claude its forms only where a terminal draws the reply', async ($, o
 })
 
 test('renders nothing where no terminal draws, as under -p', async ($, on) => {
+  clockFor($, on)
   const ran: (readonly string[])[] = []
   on('process.run', (_, e) => {
     ran.push(e.argv)
@@ -488,7 +508,7 @@ test('renders nothing where no terminal draws, as under -p', async ($, on) => {
     return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
   })
   on('session.surfaces', () => ({ value: [] }))
-  await $.session.append({
+  await append($, {
     door: 'response',
     origin: { kind: 'model', model: 'test' },
     uuid: 'row-headless',
@@ -517,7 +537,7 @@ test('tells Claude nothing when turned off', { options: { enabled: false } }, as
 
 test('a reply that opens with a block that failed has its bullet beside the box', async ($, on) => {
   on('process.run', () => ({ value: { ...RAN, exitCode: 1, stderr: 'Error: bad diagram' } }))
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'row-opens-failed', `\`\`\`mermaid\n${SOURCE}\n\`\`\`\n\nAfter`)
 
   expect(await ui.find({ type: 'Text', text: '⏺ ' })).toBeDefined()
@@ -532,7 +552,7 @@ test('a fence indented under a list item is left as text, not rendered', async (
 
     return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
   })
-  const drawn = engine(on)
+  const drawn = engine($, on)
   const text = `- step\n  \`\`\`mermaid\n  ${SOURCE}\n  \`\`\``
   const ui = await reply($, 'row-indented', text)
 
@@ -542,7 +562,7 @@ test('a fence indented under a list item is left as text, not rendered', async (
 })
 
 test('draws nothing when turned off', { options: { enabled: false } }, async ($, on) => {
-  const drawn = engine(on)
+  const drawn = engine($, on)
   const ui = await reply($, 'row-off')
 
   expect(await ui.find({ type: 'Image' })).toBeUndefined()
@@ -569,7 +589,7 @@ test('a picture has buttons that copy its source and open it in a pane', async (
 
     return { value: { ...RAN, stdout: JSON.stringify(diagram) } }
   })
-  engine(on)
+  engine($, on)
   const pane = (bodyColumns: number, bodyRows: number) =>
     $.ui.mount({
       plugin: 'reply-media',
@@ -611,7 +631,7 @@ test('a picture has buttons that copy its source and open it in a pane', async (
 })
 
 test('a video is drawn as its first frame, and plays frame by frame once it is cut', async ($, on) => {
-  const clock = mock.clock(on)
+  const clock = clockFor($, on)
   const ran: (string | undefined)[][] = []
   const swapped: string[] = []
   on('process.run', (_, e) => {
@@ -629,9 +649,9 @@ test('a video is drawn as its first frame, and plays frame by frame once it is c
 
     return { value: {} }
   })
-  engine(on)
+  engine($, on)
   const text = 'A recording:\n\n![demo](demo.mp4)'
-  await $.session.append({
+  await append($, {
     door: 'response',
     origin: { kind: 'model', model: 'test' },
     uuid: 'row-video',
@@ -684,7 +704,7 @@ test('a video is drawn as its first frame, and plays frame by frame once it is c
 })
 
 test('a slow first video extraction returns the press and remains cancellable', async ($, on) => {
-  const clock = mock.clock(on)
+  const clock = clockFor($, on)
   let pressReturned = false
   let cuts = 0
   on('ui.press', async (_, e, next) => {
@@ -701,7 +721,7 @@ test('a slow first video extraction returns the press and remains cancellable', 
     return { value: { ...RAN, stdout: JSON.stringify({ ...DIAGRAM, clip: '/work/slow.mkv' }) } }
   })
   on('ui.toast', () => ({ value: undefined }))
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'slow-video', '![slow](slow.mkv)')
   const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
   const pressed = ui.press({ key })
@@ -719,7 +739,7 @@ test('a slow first video extraction returns the press and remains cancellable', 
 })
 
 test('a slow video starts after preparation without another press', async ($, on) => {
-  const clock = mock.clock(on)
+  const clock = clockFor($, on)
   let swaps = 0
   on('process.run', async (_, e) => {
     if (e.argv[2] === 'frames') {
@@ -733,7 +753,7 @@ test('a slow video starts after preparation without another press', async ($, on
     swaps++
     return { value: {} }
   })
-  engine(on)
+  engine($, on)
   const ui = await reply($, 'slow-plays', '![slow](slow.mkv)')
   const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
   const pressed = ui.press({ key })
@@ -775,7 +795,7 @@ test(
 
       return { value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }
     })
-    const drawn = engine(on)
+    const drawn = engine($, on)
     const ui = await reply($, 'row-diagrams-off')
 
     expect(ran).toEqual([])
@@ -814,7 +834,7 @@ test(
   { options: { buttons: false } },
   async ($, on) => {
     on('process.run', () => ({ value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }))
-    engine(on)
+    engine($, on)
     const ui = await reply($, 'row-no-buttons')
 
     expect(await ui.find({ type: 'Image' })).toBeDefined()
@@ -824,7 +844,7 @@ test(
 )
 
 test('PNG bytes travel inline, while files above the engine limit use file transport', async ($, on) => {
-  engine(on, false)
+  engine($, on, false)
   on('process.run', () => ({ value: { ...RAN, stdout: JSON.stringify(DIAGRAM) } }))
   let size = 68
   on('fs.stat', () => ({ value: { kind: 'file' as const, size, mtimeMs: 0, isLink: false } }))
