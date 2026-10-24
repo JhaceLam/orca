@@ -161,6 +161,36 @@ it('recovers again after a restored encoded payload is evicted by the byte budge
   }
 })
 
+it('recovers a reused image ID after deletion, a new upload and byte-budget eviction', async () => {
+  const saved = new Map()
+  const read = vi.fn(async (id) => saved.get(id))
+  const h = createPlaceholderTerminal({
+    readKittyImage: read,
+    onKittyImageChanged: (id, snapshot) => {
+      if (snapshot) {
+        saved.set(id, snapshot)
+      } else {
+        saved.delete(id)
+      }
+    }
+  })
+  try {
+    await writeKitty(h.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+    await writeKitty(h.terminal, 'a=d,d=I,i=7,q=2')
+    await writeKitty(h.terminal, 'a=T,f=100,i=7,U=1,c=3,r=1', PNG)
+    vi.spyOn(h.storage, 'getLimit').mockReturnValue(saved.get(7).image.data.size / 1000000)
+    await writeKitty(h.terminal, 'a=T,f=100,i=8,U=1,c=2,r=2', PNG)
+    expect(h.kitty.getImage(7)).toBeUndefined()
+    await write(h.terminal, placeholderCells(7))
+    render(h)
+    await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+    expect(read).toHaveBeenCalledWith(7)
+    expect(h.kitty._virtualPlacementFor(7, 0).cols).toBe(3)
+  } finally {
+    h.terminal.dispose()
+  }
+})
+
 it.each(['absent', 'rejected', 'wrong id', 'oversized'])(
   'retries a %s replay lookup after a viewport change without polling the same viewport',
   async (failure) => {

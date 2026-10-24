@@ -262,7 +262,7 @@ export function saveTerminalKittyImage(
   }
 }
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('pagehide', () => {
     void cache.flush()
   })

@@ -19,9 +19,31 @@ function snapshot(id = 7, bytes = 10): KittyImageSnapshot {
     placements: [{ placementId: 0, cols: 2, rows: 2, command: { unicodePlaceholder: 1 } }]
   }
 }
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
 
 describe('Kitty image replay cache', () => {
+  it('keeps the cache usable when the window only exposes a host bridge', async () => {
+    vi.stubGlobal('window', { api: {} })
+    vi.resetModules()
+    const { createKittyReplayCache: createCache } = await import('./terminal-kitty-replay-cache')
+    const records = new Map<string, KittyImageSnapshot>()
+    const cache = createCache({
+      read: async (scope, id) => records.get(`${scope}/${id}`),
+      write: async (changes) => {
+        for (const { scope, id, record } of changes) {
+          if (record) {
+            records.set(`${scope}/${id}`, record.snapshot)
+          }
+        }
+      }
+    })
+    cache.save('pane', 7, snapshot())
+    expect(await cache.read('pane', 7)).toEqual(snapshot())
+  })
+
   it('coalesces writes and applies deletion before a subsequent read', async () => {
     vi.useFakeTimers()
     const records = new Map<string, KittyImageSnapshot>()

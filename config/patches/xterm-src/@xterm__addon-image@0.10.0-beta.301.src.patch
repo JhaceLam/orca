@@ -614,7 +614,7 @@ index 04328420c2bae02010bb4c9adb3fd341aed56c0c..fa945fd496a75acda31501b06a808c5c
    layer: ImageLayer;
    zIndex: number;
 diff --git a/src/kitty/KittyGraphicsHandler.ts b/src/kitty/KittyGraphicsHandler.ts
-index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f4a79793a 100644
+index de889dfff75d9ecc8ab47a025e6989ffe75bb202..ec7f34d6ce3638d0b53f10df07216ab4bfeb06ee 100644
 --- a/src/kitty/KittyGraphicsHandler.ts
 +++ b/src/kitty/KittyGraphicsHandler.ts
 @@ -7,6 +7,7 @@ import { IDisposable } from '@xterm/xterm';
@@ -829,16 +829,17 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
      const transmission = cmd.transmission ?? 'd';
      if (transmission !== 'd') {
        if (cmd.id !== undefined) {
-@@ -416,7 +509,7 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -416,7 +509,8 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
        height: cmd.height ?? 0,
        format: (cmd.format ?? KittyFormat.RGBA) as 24 | 32 | 100,
        compression: cmd.compression ?? ''
 -    });
 +    }, retainVirtual);
++    if (cmd.id !== undefined) this._missingImages.delete(cmd.id);
      return true;
    }
  
-@@ -428,12 +521,15 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -428,12 +522,15 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
        return true;
      }
  
@@ -856,7 +857,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
        if (cmd.id !== undefined) {
          return result.then(success => {
            this._sendResponse(id, success ? 'OK' : 'EINVAL:image rendering failed', cmd.quiet ?? 0);
-@@ -449,9 +545,6 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -449,9 +546,6 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
      const id = cmd.id ?? 0;
      const quiet = cmd.quiet ?? 0;
  
@@ -866,7 +867,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
      const transmission = cmd.transmission ?? 'd';
      if (transmission !== 'd') {
        this._sendResponse(id, 'EINVAL:unsupported transmission medium', quiet);
-@@ -497,31 +590,31 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -497,31 +591,31 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
    }
  
    private _handleDelete(cmd: IKittyCommand): boolean {
@@ -911,7 +912,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
          }
          break;
        default:
-@@ -550,49 +643,17 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -550,49 +644,17 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
    }
  
    private async _decodeAndDisplay(image: IKittyImageData, cmd: IKittyCommand): Promise<void> {
@@ -966,7 +967,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
  
        let w = bitmap.width;
        let h = bitmap.height;
-@@ -660,6 +721,7 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -660,6 +722,7 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
          }
        }
  
@@ -974,7 +975,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
        const zIndex = cmd.zIndex ?? 0;
        this._kittyStorage.addImage(image.id, bitmap, true, layer, zIndex);
        bitmap = undefined;  // ownership transferred to storage
-@@ -684,6 +746,131 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -684,6 +747,131 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
      }
    }
  
@@ -1106,7 +1107,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
    // Create ImageBitmap from already-decoded image data.
    private async _createBitmap(image: IKittyImageData): Promise<ImageBitmap> {
      let bytes: Uint8Array = new Uint8Array(await image.data.arrayBuffer());
-@@ -693,6 +880,12 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -693,6 +881,12 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
      }
  
      if (image.format === KittyFormat.PNG) {
@@ -1119,7 +1120,7 @@ index de889dfff75d9ecc8ab47a025e6989ffe75bb202..9729c6f2386a6d44da4e6e983108b35f
        const blob = new Blob([bytes as BlobPart], { type: 'image/png' });
        if (!window.createImageBitmap) {
          const url = URL.createObjectURL(blob);
-@@ -775,27 +968,45 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
+@@ -775,27 +969,45 @@ export class KittyGraphicsHandler implements IApcHandler, IResetHandler, IDispos
    private async _decompressZlib(compressed: Uint8Array): Promise<Uint8Array> {
      try {
        return await this._decompress(compressed, 'deflate');
