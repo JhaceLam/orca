@@ -61,13 +61,15 @@ beforeEach(() => {
         },
         onRequestTerminalTabMount: () => () => {},
         replyTerminalCreate: vi.fn()
-      }
+      },
+      worktrees: { updateMeta: vi.fn().mockResolvedValue(undefined) }
     }
   })
   registerTerminalPresentationIpcBridge([])
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await vi.dynamicImportSettled()
   vi.unstubAllGlobals()
   useAppStore.setState(initialAppStoreState, true)
 })
