@@ -53,6 +53,20 @@ function enclosingFunctionName(node: ts.Node): string | null {
 
 type Census = { sites: { site: string; allowed: boolean }[]; unguarded: string[] }
 
+/** Keep every production file, including ones reached only through test imports. */
+function collectProductionRoots(
+  rootNames: readonly string[],
+  options: ts.CompilerOptions
+): string[] {
+  // Parsing discovers the original production inventory without building types for all test trees.
+  // Return only names so this temporary program can be collected before type checking starts.
+  return ts
+    .createProgram({ rootNames, options })
+    .getSourceFiles()
+    .filter((source) => isProductionFile(source.fileName))
+    .map((source) => source.fileName)
+}
+
 function collectCopyAccesses(): Census {
   const configPath = path.join(ROOT, 'config/tsconfig.node.json')
   const parsed = ts.getParsedCommandLineOfConfigFile(
@@ -63,7 +77,15 @@ function collectCopyAccesses(): Census {
   if (!parsed) {
     throw new Error('cannot read config/tsconfig.node.json')
   }
-  const program = ts.createProgram({ rootNames: parsed.fileNames, options: parsed.options })
+  const rootNames = collectProductionRoots(parsed.fileNames, parsed.options)
+  const program = ts.createProgram({ rootNames, options: parsed.options })
+  expect(
+    program
+      .getSourceFiles()
+      .filter((source) => isProductionFile(source.fileName))
+      .map((source) => source.fileName)
+      .sort()
+  ).toEqual([...rootNames].sort())
   const checker = program.getTypeChecker()
   const recordSource = program.getSourceFile(RECORD_FILE)
   if (!recordSource) {

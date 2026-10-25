@@ -38,10 +38,20 @@ async function createRepo(): Promise<string> {
 let emptyCommitSequence = 0
 
 function commitEmpty(repoPath: string, count: number): void {
+  const tree = git(repoPath, ['write-tree'])
+  let parent = git(repoPath, ['rev-parse', 'HEAD'])
   for (let index = 0; index < count; index += 1) {
     emptyCommitSequence += 1
-    git(repoPath, ['commit', '--quiet', '--allow-empty', '-m', `commit ${emptyCommitSequence}`])
+    parent = git(repoPath, [
+      'commit-tree',
+      tree,
+      '-p',
+      parent,
+      '-m',
+      `commit ${emptyCommitSequence}`
+    ])
   }
+  git(repoPath, ['update-ref', 'HEAD', parent])
 }
 
 afterEach(async () => {
