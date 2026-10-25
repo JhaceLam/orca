@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -12,46 +13,52 @@ import {
 const tempRoots: string[] = []
 
 // Disable detached maintenance so commit-graph writes cannot race fixture teardown.
-function git(cwd: string, args: string[]): string {
+function git(cwd: string, args: string[], inheritedEnv = process.env): string {
   return execFileSync('git', [...GIT_FETCH_SKIP_AUTO_MAINTENANCE_CONFIG_ARGS, ...args], {
     cwd,
+    env: Object.fromEntries(
+      Object.entries(inheritedEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
+    ),
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe']
   }).trim()
 }
 
-async function createRepo(): Promise<string> {
+async function createRepo(inheritedEnv = process.env): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'orca-base-divergence-'))
   tempRoots.push(root)
   const repoPath = join(root, 'repo')
-  execFileSync('git', ['init', '--quiet', repoPath])
-  git(repoPath, ['symbolic-ref', 'HEAD', 'refs/heads/main'])
-  git(repoPath, ['config', 'user.email', 'test@example.com'])
-  git(repoPath, ['config', 'user.name', 'Test User'])
+  git(root, ['init', '--quiet', repoPath], inheritedEnv)
+  expect(realpathSync(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))).toBe(
+    realpathSync(join(repoPath, '.git'))
+  )
+  git(repoPath, ['symbolic-ref', 'HEAD', 'refs/heads/main'], inheritedEnv)
+  git(repoPath, ['config', 'user.email', 'test@example.com'], inheritedEnv)
+  git(repoPath, ['config', 'user.name', 'Test User'], inheritedEnv)
   await writeFile(join(repoPath, 'version.txt'), 'one\n')
-  git(repoPath, ['add', 'version.txt'])
-  git(repoPath, ['commit', '--quiet', '-m', 'initial'])
+  git(repoPath, ['add', 'version.txt'], inheritedEnv)
+  git(repoPath, ['commit', '--quiet', '-m', 'initial'], inheritedEnv)
   return repoPath
 }
 
 // Unique messages prevent same-second empty commits from reusing the same hash after reset.
 let emptyCommitSequence = 0
 
-function commitEmpty(repoPath: string, count: number): void {
-  const tree = git(repoPath, ['write-tree'])
-  let parent = git(repoPath, ['rev-parse', 'HEAD'])
+function commitEmpty(repoPath: string, count: number, inheritedEnv = process.env): void {
+  const tree = git(repoPath, ['write-tree'], inheritedEnv)
+  let parent = git(repoPath, ['rev-parse', 'HEAD'], inheritedEnv)
   for (let index = 0; index < count; index += 1) {
     emptyCommitSequence += 1
-    parent = git(repoPath, [
-      'commit-tree',
-      tree,
-      '-p',
-      parent,
-      '-m',
-      `commit ${emptyCommitSequence}`
-    ])
+    parent = git(
+      repoPath,
+      ['commit-tree', tree, '-p', parent, '-m', `commit ${emptyCommitSequence}`],
+      inheritedEnv
+    )
   }
-  git(repoPath, ['update-ref', 'HEAD', parent])
+  expect(realpathSync(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))).toBe(
+    realpathSync(join(repoPath, '.git'))
+  )
+  git(repoPath, ['update-ref', 'HEAD', parent], inheritedEnv)
 }
 
 afterEach(async () => {
@@ -59,6 +66,44 @@ afterEach(async () => {
 })
 
 describe('measureRetargetDivergence with real Git', () => {
+  it.each(['repository pointers', 'config overrides'] as const)(
+    'keeps the caller repository unchanged with inherited Git %s',
+    async (contamination) => {
+      const caller = await createRepo()
+      const paths = ['HEAD', 'config', 'index'].map((name) => join(caller, '.git', name))
+      const before = await Promise.all(paths.map((path) => readFile(path)))
+      const refsBefore = git(caller, ['show-ref'])
+      const inheritedGitEnv =
+        contamination === 'repository pointers'
+          ? {
+              GIT_DIR: join(caller, '.git'),
+              GIT_WORK_TREE: caller,
+              GIT_COMMON_DIR: join(caller, '.git'),
+              GIT_INDEX_FILE: join(caller, '.git', 'index'),
+              GIT_OBJECT_DIRECTORY: join(caller, '.git', 'objects'),
+              GIT_ALTERNATE_OBJECT_DIRECTORIES: join(caller, '.git', 'objects')
+            }
+          : {
+              GIT_CONFIG: join(caller, '.git', 'config'),
+              GIT_CONFIG_PARAMETERS: "'user.name=Injected Author'",
+              GIT_CONFIG_COUNT: '1',
+              GIT_CONFIG_KEY_0: 'core.bare',
+              GIT_CONFIG_VALUE_0: 'true'
+            }
+      const inheritedEnv = { ...process.env, ...inheritedGitEnv }
+      const fixture = await createRepo(inheritedEnv)
+      commitEmpty(fixture, 2, inheritedEnv)
+
+      expect(git(fixture, ['rev-list', '--count', 'HEAD'])).toBe('3')
+      expect(git(fixture, ['show', '-s', '--format=%an <%ae>', 'HEAD'])).toBe(
+        'Test User <test@example.com>'
+      )
+      expect(await Promise.all(paths.map((path) => readFile(path)))).toEqual(before)
+      expect(git(caller, ['show-ref'])).toBe(refsBefore)
+      expect(await readFile(join(caller, 'version.txt'), 'utf8')).toBe('one\n')
+    }
+  )
+
   it('allows the drift between a local branch and its remote-tracking copy', async () => {
     const repoPath = await createRepo()
     git(repoPath, ['update-ref', 'refs/remotes/origin/main', 'HEAD'])
