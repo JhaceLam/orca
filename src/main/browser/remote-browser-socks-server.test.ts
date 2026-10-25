@@ -10,9 +10,12 @@ afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => server.close()))
 })
 
-async function connectClient(server: RemoteBrowserSocksServer): Promise<Socket> {
+async function connectClient(
+  server: RemoteBrowserSocksServer,
+  allowHalfOpen = false
+): Promise<Socket> {
   const address = await server.listen()
-  const socket = connect(address.port, address.host)
+  const socket = connect({ port: address.port, host: address.host, allowHalfOpen })
   await once(socket, 'connect')
   return socket
 }
@@ -160,19 +163,26 @@ describe('RemoteBrowserSocksServer', () => {
       open: async () => new PassThrough()
     })
     servers.push(peerServer)
-    const peerAddress = await peerServer.listen()
-    const peer = connect({ ...peerAddress, allowHalfOpen: true })
-    await once(peer, 'connect')
-    await greet(peer)
-    peer.write(domainConnectRequest('localhost', 80, 2))
-    await readExact(peer, 10)
-    await expect(
-      Promise.race([
-        peerServer.close().then(() => 'closed'),
-        new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 1_000))
-      ])
-    ).resolves.toBe('closed')
-    peer.destroy()
+    const peer = await connectClient(peerServer, true)
+    try {
+      await greet(peer)
+      const peerEnded = once(peer, 'end').then(
+        () => true,
+        () => false
+      )
+      peer.write(domainConnectRequest('localhost', 80, 2))
+      expect(Array.from(await readExact(peer, 10))).toEqual([5, 7, 0, 1, 0, 0, 0, 0, 0, 0])
+      expect(await peerEnded).toBe(true)
+      expect(peer.writable).toBe(true)
+      await expect(
+        Promise.race([
+          peerServer.close().then(() => 'closed'),
+          new Promise<string>((resolve) => setTimeout(() => resolve('timed-out'), 1_000))
+        ])
+      ).resolves.toBe('closed')
+    } finally {
+      peer.destroy()
+    }
   })
 
   it.each([0, 4 * 1024 * 1024])(
@@ -187,7 +197,7 @@ describe('RemoteBrowserSocksServer', () => {
       )
       const server = new RemoteBrowserSocksServer({ open })
       servers.push(server)
-      const socket = await connectClient(server)
+      const socket = await connectClient(server, additionalBytes > 0)
       const errors: NodeJS.ErrnoException[] = []
       const onError = (error: NodeJS.ErrnoException): void => {
         errors.push(error)
@@ -202,6 +212,7 @@ describe('RemoteBrowserSocksServer', () => {
         socket.write(Buffer.alloc(300 * 1024, 7))
         expect(Array.from(await readExact(socket, 10))).toEqual([5, 1, 0, 1, 0, 0, 0, 0, 0, 0])
         if (additionalBytes > 0) {
+          expect(socket.writable).toBe(true)
           socket.write(Buffer.alloc(additionalBytes, 7))
         }
         const upstream = new PassThrough()
