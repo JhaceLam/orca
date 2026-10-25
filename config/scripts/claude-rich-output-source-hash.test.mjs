@@ -10,6 +10,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, expect, test } from 'vitest'
 
 const scripts = import.meta.dirname
@@ -28,7 +29,11 @@ function fixture() {
     mkdirSync(dirname(file), { recursive: true })
     writeFileSync(file, source)
   }
-  for (const name of ['build-claude-rich-output.mjs', 'claude-rich-output-source-hash.mjs']) {
+  for (const name of [
+    'build-claude-rich-output.mjs',
+    'claude-rich-output-source-hash.mjs',
+    'pnpm-cli-invocation.mjs'
+  ]) {
     put(`config/scripts/${name}`, readFileSync(join(scripts, name)))
   }
   put(
@@ -63,11 +68,12 @@ export function runProcessSync({ args }) {
   return { code: 0 };
 }`
   )
-  const runBuild = () =>
+  const runBuild = (env = process.env) =>
     runProcessSync({
       program: process.execPath,
       args: [join(root, 'config/scripts/build-claude-rich-output.mjs')],
       cwd: root,
+      env,
       timeoutMs: 30_000
     })
   const build = () => {
@@ -77,6 +83,34 @@ export function runProcessSync({ args }) {
   const deployments = () => readFileSync(join(root, 'deploy.log'), 'utf8').trim().split('\n').length
   return { root, put, build, runBuild, deployments }
 }
+
+test.each(['cjs', 'mjs'])('deploys through npm_execpath without PATH pnpm (%s)', (extension) => {
+  const { root, put, runBuild, deployments } = fixture()
+  put('fixture-deploy.mjs', readFileSync(join(root, 'node_modules/@orca/process-host/index.js')))
+  put(
+    'node_modules/@orca/process-host/index.js',
+    `export { runProcessSync } from ${JSON.stringify(import.meta.resolve('@orca/process-host'))}`
+  )
+  const entry = join(root, 'pnpm entry', `pnpm.${extension}`)
+  put(
+    `pnpm entry/pnpm.${extension}`,
+    `import(${JSON.stringify(pathToFileURL(join(root, 'fixture-deploy.mjs')).href)}).then(
+  ({ runProcessSync }) => { process.exitCode = runProcessSync({ args: process.argv.slice(2) }).code }
+)`
+  )
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => name.toUpperCase() !== 'PATH')
+  )
+
+  const result = runBuild({ ...env, PATH: join(root, 'empty-bin'), npm_execpath: entry })
+
+  expect(result.code, result.stderr).toBe(0)
+  expect(deployments()).toBe(1)
+  expect(readFileSync(join(root, 'out/claude-rich-output/foo'), 'utf8')).toBe('barvalue')
+  expect(
+    JSON.parse(readFileSync(join(root, 'out/claude-rich-output/manifest.json'), 'utf8')).assets
+  ).toContain('claude-rich-output/foo')
+})
 
 test('a cached workspace package build still refreshes changed rich-output resources', () => {
   const { root, put, deployments } = fixture()
@@ -194,7 +228,8 @@ test.each([
 for (const name of [
   'pnpm-lock.yaml',
   'config/scripts/build-claude-rich-output.mjs',
-  'config/scripts/claude-rich-output-source-hash.mjs'
+  'config/scripts/claude-rich-output-source-hash.mjs',
+  'config/scripts/pnpm-cli-invocation.mjs'
 ]) {
   test(`changing deployment input ${name} refreshes the bundle`, () => {
     const { root, build, deployments } = fixture()

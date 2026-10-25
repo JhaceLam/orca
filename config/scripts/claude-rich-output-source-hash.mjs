@@ -6,7 +6,8 @@ export function computeClaudeRichOutputSourceHash(root) {
   const filenames = [
     'pnpm-lock.yaml',
     'config/scripts/build-claude-rich-output.mjs',
-    'config/scripts/claude-rich-output-source-hash.mjs'
+    'config/scripts/claude-rich-output-source-hash.mjs',
+    'config/scripts/pnpm-cli-invocation.mjs'
   ]
   function visit(directory) {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {

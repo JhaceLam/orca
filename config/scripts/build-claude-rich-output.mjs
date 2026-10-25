@@ -12,6 +12,7 @@ import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcessSync } from '@orca/process-host'
 import { computeClaudeRichOutputSourceHash } from './claude-rich-output-source-hash.mjs'
+import { resolvePnpmCliInvocation } from './pnpm-cli-invocation.mjs'
 import { claudeRichOutputAssetFilenames } from '../../src/shared/claude-rich-output-artifacts.ts'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
@@ -32,9 +33,11 @@ function deploymentIsComplete() {
   }
 }
 if (!existsSync(marker) || readFileSync(marker, 'utf8') !== key || !deploymentIsComplete()) {
+  const { command, prefixArgs } = resolvePnpmCliInvocation()
   const result = runProcessSync({
-    program: 'pnpm',
+    program: command,
     args: [
+      ...prefixArgs,
       '--filter',
       '@orca/claude-rich-output',
       'deploy',

@@ -326,10 +326,10 @@ module.exports = {
     // Why: feature-wall media is copied via extraResources so runtime can read
     // it from process.resourcesPath; exclude the source copy from app.asar.
     '!resources/onboarding/feature-wall/**',
-    '!resources/skills/**',
-    '!resources/native-chat-visuals/**',
     '!resources/claude-rich-output/**',
     '!out/claude-rich-output{,/**/*}',
+    '!resources/skills/**',
+    '!resources/native-chat-visuals/**',
     // Why: bundled plugins ship via extraResources to resources/plugins/launch;
     // packing the source tree into app.asar would duplicate those exact bytes.
     '!resources/plugins/launch/**',
