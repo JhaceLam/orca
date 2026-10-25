@@ -13,7 +13,9 @@ export type BrowserRouteDnsPrefetchProbeResult = {
   controlHostResolverEvents: string[]
 }
 
-export async function runBrowserRouteDnsPrefetchProbe(): Promise<BrowserRouteDnsPrefetchProbeResult> {
+export async function runBrowserRouteDnsPrefetchProbe(
+  options: { blockGracefulQuit?: boolean } = {}
+): Promise<BrowserRouteDnsPrefetchProbeResult> {
   const root = mkdtempSync(join(tmpdir(), 'orca-browser-dns-prefetch-'))
   const unique = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`
   const probeHost = `orca-prefetch-${unique}.invalid`
@@ -27,7 +29,7 @@ export async function runBrowserRouteDnsPrefetchProbe(): Promise<BrowserRouteDns
     const netLogPath = join(root, 'netlog.json')
     const resultPath = join(root, 'result.json')
     const mainPath = join(root, 'main.cjs')
-    writeFileSync(mainPath, browserRouteDnsPrefetchElectronMain())
+    writeFileSync(mainPath, browserRouteDnsPrefetchElectronMain(options))
     writeFileSync(
       join(root, 'config.json'),
       JSON.stringify({ netLogPath, probeHost, resultPath, socksPort })

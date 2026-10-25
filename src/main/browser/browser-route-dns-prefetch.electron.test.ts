@@ -15,4 +15,15 @@ describe('browser route DNS prefetch under Electron', () => {
 
     expect(probe.controlHostResolverEvents).toEqual([])
   }, 90_000)
+
+  it('finishes the recorded probe when graceful application quit is blocked', async () => {
+    const probe = await runBrowserRouteDnsPrefetchProbe({ blockGracefulQuit: true })
+
+    expect(probe.resolvedProxy).toMatch(/^SOCKS5 127\.0\.0\.1:\d+$/)
+    expect(probe.probeHostResolverEvents).toContain('HOST_RESOLVER_MANAGER_CREATE_JOB')
+    expect(
+      probe.probeHostResolverEvents.some((name) => /^HOST_RESOLVER_(SYSTEM|DNS)_TASK$/.test(name))
+    ).toBe(true)
+    expect(probe.controlHostResolverEvents).toEqual([])
+  }, 90_000)
 })

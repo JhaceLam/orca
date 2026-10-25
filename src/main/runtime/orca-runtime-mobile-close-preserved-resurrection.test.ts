@@ -102,6 +102,7 @@ function createHarness(options: { restarted?: boolean } = {}) {
   const repo = {
     id: REPO_ID,
     path: WORKTREE_PATH,
+    upstream: null,
     displayName: 'preserved-resurrection',
     badgeColor: '#000000',
     addedAt: 1
@@ -297,6 +298,7 @@ function createSplitHarness() {
   const repo = {
     id: REPO_ID,
     path: WORKTREE_PATH,
+    upstream: null,
     displayName: 'preserved-resurrection',
     badgeColor: '#000000',
     addedAt: 1

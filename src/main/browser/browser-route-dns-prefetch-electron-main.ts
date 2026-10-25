@@ -1,8 +1,15 @@
-export function browserRouteDnsPrefetchElectronMain(): string {
+export function browserRouteDnsPrefetchElectronMain(
+  options: { blockGracefulQuit?: boolean } = {}
+): string {
   return String.raw`
 const { app, BrowserWindow, protocol, session } = require('electron')
 const { readFileSync, writeFileSync } = require('node:fs')
 const config = JSON.parse(readFileSync(process.argv[2], 'utf8'))
+
+if (process.platform === 'darwin' && process.env.ORCA_BACKGROUND_LAUNCH === '1') {
+  app.dock.hide()
+  app.setActivationPolicy('accessory')
+}
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'probe', privileges: { standard: true, secure: true, supportFetchAPI: true } }
@@ -45,6 +52,7 @@ async function probe() {
 
 // Prevent automatic quit while stopLogging() yields before the result is written.
 app.on('window-all-closed', () => {})
+${options.blockGracefulQuit ? "app.on('before-quit', (event) => event.preventDefault())" : ''}
 
 async function run() {
   const timeout = setTimeout(() => app.exit(2), 25000)
@@ -52,7 +60,7 @@ async function run() {
   const result = await probe()
   writeFileSync(config.resultPath, JSON.stringify(result))
   clearTimeout(timeout)
-  app.quit()
+  app.exit(0)
 }
 
 run().catch((error) => {
