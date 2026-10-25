@@ -12,7 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { runInNewContext } from 'node:vm'
-import { expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
 const workflow = parse(readFileSync('.github/workflows/zcode-credential-contract.yml', 'utf8'))
@@ -25,6 +25,13 @@ const account = job.steps.find(
 const credentials = job.steps.find(
   (step) => step.name === 'Verify rollback and native Windows permissions'
 )
+let fixtureHome
+beforeEach(() => {
+  fixtureHome = mkdtempSync(join(tmpdir(), 'orca-zcode-home-'))
+  writeFileSync(join(fixtureHome, '.gitconfig'), '')
+})
+afterEach(() => rmSync(fixtureHome, { recursive: true, force: true }))
+
 const accountFiles = [
   'src/main/zcode/zcode-v2-plan-credentials.test.ts',
   'src/main/zcode/zcode-v2-personal-overlay-raw-json.test.ts',
@@ -122,9 +129,17 @@ function executeScope(directory, overrides = {}) {
 }
 
 function fixtureEnvironment(inheritedEnv) {
-  return Object.fromEntries(
-    Object.entries(inheritedEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
-  )
+  return {
+    ...Object.fromEntries(
+      Object.entries(inheritedEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
+    ),
+    HOME: fixtureHome,
+    USERPROFILE: fixtureHome,
+    XDG_CONFIG_HOME: fixtureHome,
+    GIT_CONFIG_GLOBAL: join(fixtureHome, '.gitconfig'),
+    GIT_CONFIG_SYSTEM: join(fixtureHome, '.gitconfig'),
+    GIT_CONFIG_NOSYSTEM: '1'
+  }
 }
 
 function createScopeFixture(directory, inheritedEnv = process.env) {
@@ -158,6 +173,37 @@ function createScopeFixture(directory, inheritedEnv = process.env) {
   )
   return { git, commit }
 }
+
+it('keeps fixture commits independent of host-required content filters', () => {
+  const home = mkdtempSync(join(tmpdir(), 'orca-zcode-filter-home-'))
+  const directory = mkdtempSync(join(tmpdir(), 'orca-zcode-filter-repo-'))
+  try {
+    const attributes = join(home, 'attributes')
+    writeFileSync(attributes, '* filter=unavailable\n')
+    const contents = `[core]\n\tattributesFile = ${JSON.stringify(attributes)}\n[filter "unavailable"]\n\tclean = orca-fixture-missing-clean-filter\n\trequired = true\n`
+    const config = join(home, '.gitconfig')
+    writeFileSync(config, contents)
+    const emptyConfig = join(home, 'empty-config')
+    writeFileSync(emptyConfig, '')
+    const fixture = createScopeFixture(directory, {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      XDG_CONFIG_HOME: home,
+      GIT_CONFIG_GLOBAL: emptyConfig,
+      GIT_CONFIG_SYSTEM: emptyConfig
+    })
+    writeFileSync(join(directory, 'README.md'), 'fixture content')
+    fixture.commit()
+
+    expect(fixture.git(['rev-list', '--count', 'HEAD']).toString().trim()).toBe('1')
+    expect(readFileSync(config, 'utf8')).toBe(contents)
+    expect(readFileSync(emptyConfig, 'utf8')).toBe('')
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
 
 it.skipIf(process.platform === 'win32').each(['repository pointers', 'config overrides'])(
   'keeps an external repository unchanged with inherited Git %s',
