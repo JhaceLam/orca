@@ -161,13 +161,25 @@ async function activate(service: PluginService): Promise<void> {
   await service.invokeCommand(pluginKey, 'run')
 }
 
+async function releaseWatcherSubscriptions(
+  subscriptions: ParcelWatcher.AsyncSubscription[]
+): Promise<void> {
+  const results = await Promise.allSettled(
+    subscriptions.map(async (subscription) => {
+      await subscription.unsubscribe()
+    })
+  )
+  const failure = results.find((result) => result.status === 'rejected')
+  if (failure?.status === 'rejected') {
+    throw failure.reason
+  }
+}
+
 async function releaseFixtureWatchers(): Promise<void> {
   const settled = await Promise.allSettled(watcherLifetime.subscriptions.splice(0))
-  for (const result of settled) {
-    if (result.status === 'fulfilled') {
-      await result.value.unsubscribe()
-    }
-  }
+  await releaseWatcherSubscriptions(
+    settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []))
+  )
 }
 
 async function cleanupFixtures(): Promise<void> {
@@ -224,9 +236,7 @@ describe('PluginService worker reconciliation', () => {
       } finally {
         gate.resolve()
         try {
-          for (const subscription of subscriptions) {
-            await subscription.unsubscribe()
-          }
+          await releaseWatcherSubscriptions(subscriptions)
           await cleanup
           watcherLifetime.blockUnsubscribe = undefined
           await expect(
@@ -242,6 +252,72 @@ describe('PluginService worker reconciliation', () => {
       expect(failure).toBe(verificationFails ? assertionFailure : undefined)
       expect(await cleanup).toBeNull()
       expect(existsSync(root)).toBe(false)
+    }
+  )
+
+  it.each(['tracked', 'captured'])(
+    'settles every native watcher release before reporting an error through %s cleanup',
+    async (mode) => {
+      const fixtureRoots = await Promise.all([pluginRoot(), pluginRoot(), pluginRoot()])
+      const watcher = await import('@parcel/watcher')
+      const subscriptions = await Promise.all(
+        fixtureRoots.map((root) => watcher.subscribe(root, vi.fn()))
+      )
+      const nativeReleases = subscriptions.map((subscription) =>
+        subscription.unsubscribe.bind(subscription)
+      )
+      const gate = Promise.withResolvers<void>()
+      const firstFailure = new Error('controlled first release failure')
+      const thirdFailure = new Error('controlled later release failure')
+      const released = [false, false, false]
+      const first = vi.spyOn(subscriptions[0], 'unsubscribe').mockImplementation(async () => {
+        await nativeReleases[0]()
+        released[0] = true
+        throw firstFailure
+      })
+      const second = vi.spyOn(subscriptions[1], 'unsubscribe').mockImplementation(async () => {
+        await gate.promise
+        await nativeReleases[1]()
+        released[1] = true
+      })
+      const third = vi.spyOn(subscriptions[2], 'unsubscribe').mockImplementation(async () => {
+        await nativeReleases[2]()
+        released[2] = true
+        throw thirdFailure
+      })
+      let reported = false
+      const cleanup = (
+        mode === 'tracked' ? releaseFixtureWatchers() : releaseWatcherSubscriptions(subscriptions)
+      )
+        .then(
+          () => undefined,
+          (error: unknown) => error
+        )
+        .finally(() => {
+          reported = true
+        })
+      try {
+        await vi.waitFor(() => expect(released[0] && released[2]).toBe(true))
+        expect(released[1]).toBe(false)
+        expect(reported).toBe(false)
+        expect(fixtureRoots.every((root) => existsSync(root))).toBe(true)
+        gate.resolve()
+        expect(await cleanup).toBe(firstFailure)
+        expect(released).toEqual([true, true, true])
+        expect(watcherLifetime.releasing.size).toBe(0)
+      } finally {
+        gate.resolve()
+        await cleanup
+        first.mockRestore()
+        second.mockRestore()
+        third.mockRestore()
+        const safety = await Promise.allSettled(
+          subscriptions.map(async (subscription) => {
+            await subscription.unsubscribe()
+          })
+        )
+        expect(safety.every((result) => result.status === 'fulfilled')).toBe(true)
+      }
     }
   )
 
