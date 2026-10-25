@@ -1318,7 +1318,7 @@ index 4288dd0a4180eca8f3ae28ec0805f834b2a0a629..acb4404751339249501a89846382bddb
 +  };
 +}
 diff --git a/src/kitty/KittyImageStorage.ts b/src/kitty/KittyImageStorage.ts
-index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fbe4ab43b64e244ad7a5146cee86b9381199a4ba 100644
+index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce7952d621 100644
 --- a/src/kitty/KittyImageStorage.ts
 +++ b/src/kitty/KittyImageStorage.ts
 @@ -3,49 +3,66 @@
@@ -1482,7 +1482,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fbe4ab43b64e244ad7a5146cee86b938
      this._images.set(imageId, {
        ...imageData,
        id: imageId
-@@ -111,23 +175,106 @@ export class KittyImageStorage implements IDisposable {
+@@ -111,23 +175,109 @@ export class KittyImageStorage implements IDisposable {
      return this._images.get(kittyId);
    }
  
@@ -1516,16 +1516,19 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fbe4ab43b64e244ad7a5146cee86b938
 +    this._deleteVirtualPlacements(kittyId, undefined, keepPlacementId);
 +  }
 +
-+  private _deleteVirtualPlacements(kittyId: number, placementId?: number, keepPlacementId?: number): void {
++  private _deleteVirtualPlacements(kittyId: number, placementId?: number, keepPlacementId?: number): boolean {
 +    const placements = this._virtualPlacements.get(kittyId);
-+    if (!placements) return;
++    if (!placements) return false;
++    let deleted = false;
 +    for (const placement of [...placements.values()]) {
 +      if ((placementId === undefined || placementId === placement.placementId) && placement.placementId !== keepPlacementId) {
++        deleted = true;
 +        placements.delete(placement.placementId);
 +        if (placement.storageId !== undefined) this._storage.deleteImage(placement.storageId);
 +      }
 +    }
 +    if (!placements.size) this._virtualPlacements.delete(kittyId);
++    return deleted;
 +  }
 +
 +  public notifyImageChanged(id: number): void {
@@ -1558,8 +1561,8 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fbe4ab43b64e244ad7a5146cee86b938
 +  }
 +
 +  public deletePlacementsById(kittyId: number, placementId?: number): void {
-+    this._deleteVirtualPlacements(kittyId, placementId);
-+    if (placementId !== undefined) return;
++    const deletedVirtual = this._deleteVirtualPlacements(kittyId, placementId);
++    if (placementId !== undefined && deletedVirtual) return;
      const storageId = this._kittyIdToStorageId.get(kittyId);
      if (storageId !== undefined) {
 -      this._storage.deleteImage(storageId);
@@ -1597,7 +1600,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fbe4ab43b64e244ad7a5146cee86b938
    }
  
    public get images(): ReadonlyMap<number, IKittyImageData> {
-@@ -147,9 +294,99 @@ export class KittyImageStorage implements IDisposable {
+@@ -147,9 +297,99 @@ export class KittyImageStorage implements IDisposable {
        if (this._images.size <= KittyImageStorage._maxStoredImages / 2) {
          break;
        }
