@@ -175,26 +175,49 @@ describe('RemoteBrowserSocksServer', () => {
     peer.destroy()
   })
 
-  it('cannot resolve a pending route after pipelined input exceeds its bound', async () => {
-    let resolveOpen: ((stream: PassThrough) => void) | undefined
-    const open = vi.fn(
-      () =>
-        new Promise<PassThrough>((resolve) => {
-          resolveOpen = resolve
-        })
-    )
-    const server = new RemoteBrowserSocksServer({ open })
-    servers.push(server)
-    const socket = await connectClient(server)
-    await greet(socket)
-    socket.write(domainConnectRequest('localhost', 443))
-    await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1))
+  it.each([0, 4 * 1024 * 1024])(
+    'cannot resolve a rejected pending route with %i additional client bytes',
+    async (additionalBytes) => {
+      let resolveOpen: ((stream: PassThrough) => void) | undefined
+      const open = vi.fn(
+        () =>
+          new Promise<PassThrough>((resolve) => {
+            resolveOpen = resolve
+          })
+      )
+      const server = new RemoteBrowserSocksServer({ open })
+      servers.push(server)
+      const socket = await connectClient(server)
+      const errors: NodeJS.ErrnoException[] = []
+      const onError = (error: NodeJS.ErrnoException): void => {
+        errors.push(error)
+      }
+      socket.on('error', onError)
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()))
+      try {
+        await greet(socket)
+        socket.write(domainConnectRequest('localhost', 443))
+        await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(1))
 
-    socket.write(Buffer.alloc(300 * 1024, 7))
-    expect(Array.from(await readExact(socket, 10))).toEqual([5, 1, 0, 1, 0, 0, 0, 0, 0, 0])
-    const upstream = new PassThrough()
-    resolveOpen?.(upstream)
-    await vi.waitFor(() => expect(upstream.destroyed).toBe(true))
-    expect(upstream.readableLength).toBe(0)
-  })
+        socket.write(Buffer.alloc(300 * 1024, 7))
+        expect(Array.from(await readExact(socket, 10))).toEqual([5, 1, 0, 1, 0, 0, 0, 0, 0, 0])
+        if (additionalBytes > 0) {
+          socket.write(Buffer.alloc(additionalBytes, 7))
+        }
+        const upstream = new PassThrough()
+        resolveOpen?.(upstream)
+        await vi.waitFor(() => expect(upstream.destroyed).toBe(true))
+        expect(upstream.readableLength).toBe(0)
+        await closed
+        expect(socket.destroyed).toBe(true)
+        for (const error of errors) {
+          expect(['ECONNRESET', 'EPIPE']).toContain(error.code)
+        }
+      } finally {
+        socket.destroy()
+        await closed
+        socket.off('error', onError)
+      }
+    }
+  )
 })
