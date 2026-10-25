@@ -76,21 +76,26 @@ describe.skipIf(process.platform === 'win32')(
 
     it('reports readiness only after a delayed startup owns its lock', async () => {
       const gate = join(base, 'allow-mutation')
+      const waiting = join(base, 'mutation-waiting')
+      const pidFile = join(base, 'orcad-state-mutation.lock', 'pid')
       const { run, started } = startMutation(
         'sleep 6',
-        `while [ ! -f '${gate}' ]; do sleep 0.01; done; `
+        `while [ ! -f '${gate}' ]; do : > '${waiting}'; sleep 0.01; done; `
       )
-      const released = new Promise<void>((resolve) =>
-        setImmediate(() => {
-          writeFileSync(gate, 'ready')
-          resolve()
-        })
-      )
+      let didStart = false
+      const ready = started.then(() => {
+        didStart = true
+      })
+      const released = (async () => {
+        await expect.poll(() => existsSync(waiting)).toBe(true)
+        expect(didStart).toBe(false)
+        expect(existsSync(pidFile)).toBe(false)
+        writeFileSync(gate, 'ready')
+      })()
       try {
-        await started
-        expect(existsSync(join(base, 'orcad-state-mutation.lock', 'pid'))).toBe(true)
+        await Promise.all([released, ready])
+        expect(existsSync(pidFile)).toBe(true)
       } finally {
-        await released
         run.kill('SIGKILL')
       }
     }, 20_000)
