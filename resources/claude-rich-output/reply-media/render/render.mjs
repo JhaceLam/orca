@@ -128,14 +128,19 @@ export function rasterize(svg, key) {
     if (png.status !== 0) {
       throw new Error(String(png.stderr || png.error))
     }
+    if (!readPngCacheEntry(temporary)) {
+      throw new Error('conversion did not produce a complete PNG')
+    }
     renameSync(temporary, file)
   } finally {
     rmSync(temporary, { force: true })
   }
 
-  const ihdr = readFileSync(file).subarray(16, 24)
-  const [width, height] = [ihdr.readUInt32BE(0) / ZOOM, ihdr.readUInt32BE(4) / ZOOM]
-  console.log(JSON.stringify({ file, width, height }))
+  const size = readPngCacheEntry(file)
+  if (!size) {
+    throw new Error('conversion did not produce a complete PNG')
+  }
+  console.log(JSON.stringify({ file, width: size.width / ZOOM, height: size.height / ZOOM }))
 }
 
 const ORDER = '"elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",'

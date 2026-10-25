@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync } from 'node:fs'
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync
+} from 'node:fs'
 import { registerHooks } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -124,3 +134,77 @@ test('an init directive, a comment and a line break in a label are drawn', () =>
   draws('%%{init: {"theme": "dark"}}%%\nflowchart LR\n  %% a comment\n  A[one<br/>two] --> B')
   draws('sequenceDiagram\n  A->>B: one<br/>two')
 })
+
+const completePng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1S8AAAAASUVORK5CYII=',
+  'base64'
+)
+const zeroWidth = Buffer.from(completePng)
+zeroWidth.writeUInt32BE(0, 16)
+const zeroHeight = Buffer.from(completePng)
+zeroHeight.writeUInt32BE(0, 20)
+
+for (const [kind, source, entry] of [
+  ['diagram', SAMPLES.flowchart, 'render.mjs'],
+  ['formula', String.raw`x = \frac{a}{b}`, 'math.mjs']
+]) {
+  for (const { name, bytes } of [
+    { name: 'partial header', bytes: completePng.subarray(0, 20) },
+    { name: 'missing end', bytes: completePng.subarray(0, -12) },
+    { name: 'zero width', bytes: zeroWidth },
+    { name: 'zero height', bytes: zeroHeight }
+  ]) {
+    test(`a ${kind} rejects successful conversion with ${name} and can be retried`, () => {
+      const root = realpathSync(mkdtempSync(join(tmpdir(), 'orca-render-png-')))
+      try {
+        const preload = join(root, 'converter.cjs')
+        writeFileSync(
+          preload,
+          `
+const cp = require('node:child_process');
+const fs = require('node:fs');
+const original = cp.spawnSync;
+cp.spawnSync = function(command, args, ...rest) {
+  if (command === 'rsvg-convert') {
+    const output = args[args.indexOf('--output') + 1];
+    fs.writeFileSync(output, Buffer.from(${JSON.stringify(bytes.toString('hex'))}, 'hex'));
+    return { status: 0, stdout: '', stderr: '' };
+  }
+  return original(command, args, ...rest);
+};
+require('node:module').syncBuiltinESMExports();
+`
+        )
+        const invoke = (intercept) =>
+          spawnSync(
+            process.execPath,
+            [...(intercept ? ['--require', preload] : []), join(import.meta.dirname, entry)],
+            {
+              input: source,
+              encoding: 'utf8',
+              env: { ...process.env, TMPDIR: root, TMP: root, TEMP: root, LOCALAPPDATA: root }
+            }
+          )
+        const failed = invoke(true)
+        assert.notEqual(failed.status, 0)
+        assert.equal(failed.stdout, '')
+        assert.match(failed.stderr, /conversion did not produce a complete PNG/)
+        assert.deepEqual(
+          readdirSync(root, { recursive: true }).filter((name) => /\.(?:png|tmp)$/.test(name)),
+          []
+        )
+        const retried = invoke(false)
+        assert.equal(retried.status, 0, retried.stderr)
+        const image = JSON.parse(retried.stdout)
+        assert.ok(image.width > 0 && image.height > 0)
+        const pixels = readFileSync(image.file)
+        const cached = invoke(true)
+        assert.equal(cached.status, 0, cached.stderr)
+        assert.deepEqual(JSON.parse(cached.stdout), image)
+        assert.deepEqual(readFileSync(image.file), pixels)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  }
+}
