@@ -68,6 +68,7 @@ export type MobileAiVaultResumeSettings = {
   agentCmdOverrides?: Partial<Record<TuiAgent, string | null>>
   agentDefaultArgs?: Partial<Record<TuiAgent, string>>
   agentDefaultEnv?: Partial<Record<TuiAgent, Record<string, string>>>
+  claudeRichOutput?: boolean
 }
 
 export type MobileAiVaultResumeLaunch = {

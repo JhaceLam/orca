@@ -222,7 +222,7 @@ export const register: Register = (on, options) => {
       const count = e.surface === 'terminal' ? resumedReplies : 0
       for (const reply of count > 0 ? replies.slice(-count) : []) {
         try {
-          await render($, reply.text, drawn)
+          await render($, reply.text, drawn, true)
         } catch (error) {
           $.ui.toast(`Media preview failed: ${String(error)}`)
         }

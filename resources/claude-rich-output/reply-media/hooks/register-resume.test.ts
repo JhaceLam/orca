@@ -12,6 +12,59 @@ const RAN = {
 const START = { cwd: '/work', surface: 'terminal' as const, isInteractive: true }
 const formula = (source: string) => `\`\`\`math\n${source}\n\`\`\``
 
+for (const [kind, text] of [
+  ['formula', formula('x^2')],
+  ['diagram', '```mermaid\nflowchart LR\n  A --> B\n```']
+]) {
+  test(`resume refreshes a successful ${kind} preview for the current render environment`, async ($, on) => {
+    const clock = mock.clock(on)
+    const rendered: string[] = []
+    const reads: string[] = []
+    let theme = 'dark'
+    on('session.cwd', () => ({ value: '/work' }))
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    on('session.messages', () => ({
+      value: [{ role: 'assistant' as const, text, toolUses: [] }]
+    }))
+    on('session.start', () => ({ cwd: '/native-result' }))
+    on('fs.stat', () => ({ value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }))
+    on('fs.read', (_, e) => {
+      reads.push(e.path)
+      return { value: { base64: PNG } }
+    })
+    on('process.run', () => {
+      const file = `/tmp/${kind}-${theme}.png`
+      rendered.push(file)
+      return { value: { ...RAN, stdout: JSON.stringify({ file, width: 100, height: 40 }) } }
+    })
+    on('ui.render', { component: 'AssistantMessage' }, () => ({ type: 'engine', ref: 0 }))
+    await $.session.append({
+      door: 'response',
+      origin: { kind: 'model', model: 'test' },
+      uuid: `theme-${kind}`,
+      message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+    })
+    await clock.settle()
+    expect(rendered).toEqual([`/tmp/${kind}-dark.png`])
+    theme = 'light'
+    expect(await $.session.start(START)).toEqual({ cwd: '/native-result' })
+    expect(rendered).toEqual([`/tmp/${kind}-dark.png`, `/tmp/${kind}-light.png`])
+    const ui = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    try {
+      expect(await ui.find({ type: 'Image' })).toBeDefined()
+      expect(reads).toContain(`/tmp/${kind}-light.png`)
+      expect(reads).not.toContain(`/tmp/${kind}-dark.png`)
+    } finally {
+      await ui.unmount()
+    }
+  })
+}
+
 for (const [empty, visible] of [
   ['$$\n$$', '$$\n$$'],
   ['$$ \t\r\n$$ \r', '$$ \t\r\n$$'],
