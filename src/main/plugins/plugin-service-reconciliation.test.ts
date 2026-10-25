@@ -161,12 +161,19 @@ async function activate(service: PluginService): Promise<void> {
   await service.invokeCommand(pluginKey, 'run')
 }
 
+async function releaseFixtureWatchers(): Promise<void> {
+  const settled = await Promise.allSettled(watcherLifetime.subscriptions.splice(0))
+  for (const result of settled) {
+    if (result.status === 'fulfilled') {
+      await result.value.unsubscribe()
+    }
+  }
+}
+
 async function cleanupFixtures(): Promise<void> {
   vi.useRealTimers()
   await Promise.all(services.splice(0).map((service) => service.dispose()))
-  for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
-    await subscription.unsubscribe()
-  }
+  await releaseFixtureWatchers()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 }
 
@@ -180,7 +187,11 @@ describe('PluginService worker reconciliation', () => {
       const harness = createHarness(root)
       await activate(harness.service)
       await vi.waitFor(() => expect(watcherLifetime.subscriptions.length).toBeGreaterThan(0))
-      await Promise.all(watcherLifetime.subscriptions)
+      const subscriptions = await Promise.all(watcherLifetime.subscriptions)
+      const watcher = await import('@parcel/watcher')
+      await expect(
+        watcher.subscribe(join(root, 'missing-watcher-setup'), vi.fn())
+      ).rejects.toThrow()
       const gate = Promise.withResolvers<void>()
       const disposed = Promise.withResolvers<void>()
       const dispose = harness.service.dispose.bind(harness.service)
@@ -213,11 +224,15 @@ describe('PluginService worker reconciliation', () => {
       } finally {
         gate.resolve()
         try {
-          await cleanup
-          watcherLifetime.blockUnsubscribe = undefined
-          for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
+          for (const subscription of subscriptions) {
             await subscription.unsubscribe()
           }
+          await cleanup
+          watcherLifetime.blockUnsubscribe = undefined
+          await expect(
+            watcher.subscribe(join(root, 'missing-watcher-finally'), vi.fn())
+          ).rejects.toThrow()
+          await releaseFixtureWatchers()
           await rm(root, { recursive: true, force: true })
         } finally {
           watcherLifetime.verifyDeletion = false
