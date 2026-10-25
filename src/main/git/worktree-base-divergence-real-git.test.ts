@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GIT_FETCH_SKIP_AUTO_MAINTENANCE_CONFIG_ARGS } from '../../shared/git-fetch-auto-maintenance'
 import {
   measureRetargetDivergence,
@@ -13,21 +13,25 @@ import {
 const tempRoots: string[] = []
 let fixtureHome: string
 
+function fixtureGitEnvironment(inheritedEnv = process.env): NodeJS.ProcessEnv {
+  return {
+    ...Object.fromEntries(
+      Object.entries(inheritedEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
+    ),
+    HOME: fixtureHome,
+    USERPROFILE: fixtureHome,
+    XDG_CONFIG_HOME: fixtureHome,
+    GIT_CONFIG_GLOBAL: join(fixtureHome, '.gitconfig'),
+    GIT_CONFIG_SYSTEM: join(fixtureHome, '.gitconfig'),
+    GIT_CONFIG_NOSYSTEM: '1'
+  }
+}
+
 // Disable detached maintenance so commit-graph writes cannot race fixture teardown.
 function git(cwd: string, args: string[], inheritedEnv = process.env): string {
   return execFileSync('git', [...GIT_FETCH_SKIP_AUTO_MAINTENANCE_CONFIG_ARGS, ...args], {
     cwd,
-    env: {
-      ...Object.fromEntries(
-        Object.entries(inheritedEnv).filter(([key]) => !key.toUpperCase().startsWith('GIT_'))
-      ),
-      HOME: fixtureHome,
-      USERPROFILE: fixtureHome,
-      XDG_CONFIG_HOME: fixtureHome,
-      GIT_CONFIG_GLOBAL: join(fixtureHome, '.gitconfig'),
-      GIT_CONFIG_SYSTEM: join(fixtureHome, '.gitconfig'),
-      GIT_CONFIG_NOSYSTEM: '1'
-    },
+    env: fixtureGitEnvironment(inheritedEnv),
     encoding: 'utf8',
     stdio: ['pipe', 'pipe', 'pipe']
   }).trim()
@@ -74,9 +78,16 @@ beforeEach(async () => {
   fixtureHome = await mkdtemp(join(tmpdir(), 'orca-base-divergence-home-'))
   tempRoots.push(fixtureHome)
   await writeFile(join(fixtureHome, '.gitconfig'), '')
+  const env = fixtureGitEnvironment()
+  for (const key of new Set([...Object.keys(process.env), ...Object.keys(env)])) {
+    if (process.env[key] !== env[key]) {
+      vi.stubEnv(key, env[key])
+    }
+  }
 })
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
@@ -107,8 +118,12 @@ describe('measureRetargetDivergence with real Git', () => {
             }
       const inheritedEnv = { ...process.env, ...inheritedGitEnv }
       const fixture = await createRepo(inheritedEnv)
+      git(fixture, ['update-ref', 'refs/remotes/origin/main', 'HEAD'], inheritedEnv)
       commitEmpty(fixture, 2, inheritedEnv)
 
+      await expect(
+        measureRetargetDivergence(fixture, 'refs/remotes/origin/main', 'refs/heads/main')
+      ).resolves.toBe('within')
       expect(git(fixture, ['rev-list', '--count', 'HEAD'])).toBe('3')
       expect(git(fixture, ['show', '-s', '--format=%an <%ae>', 'HEAD'])).toBe(
         'Test User <test@example.com>'
