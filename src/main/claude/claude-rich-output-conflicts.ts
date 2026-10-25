@@ -48,7 +48,7 @@ async function readMetadata(path: string): Promise<string | null> {
 }
 
 function object(content: string | null): Record<string, unknown> | null {
-  if (content === null) {
+  if (content === null || content.trim() === '') {
     return null
   }
   const value: unknown = JSON.parse(content)

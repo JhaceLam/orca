@@ -48,6 +48,63 @@ function fixture() {
 }
 
 describe('preserving execution-host Claude plugins', () => {
+  it.each(
+    ['', ' \t\n'].flatMap((content) =>
+      ['profile settings', 'project settings', 'local settings', 'installed plugins'].map(
+        (file) => ({ file, content })
+      )
+    )
+  )('loads bundled modules with blank $file metadata: $content', async ({ file, content }) => {
+    const f = fixture()
+    const paths: Record<string, string> = {
+      'profile settings': join(f.configDir, 'settings.json'),
+      'project settings': join(f.cwd, '.claude', 'settings.json'),
+      'local settings': join(f.cwd, '.claude', 'settings.local.json'),
+      'installed plugins': join(f.configDir, 'plugins', 'installed_plugins.json')
+    }
+    const path = paths[file]
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(await f.launch()).toEqual([
+      join(f.bundle, 'reply-markdown'),
+      join(f.bundle, 'reply-media')
+    ])
+    expect(readFileSync(path, 'utf8')).toBe(content)
+    expect(warning).not.toHaveBeenCalled()
+  })
+
+  it.each(
+    ['', ' \t\n'].flatMap((content) =>
+      ['configured', 'synced'].map((location) => ({ location, content }))
+    )
+  )(
+    'preserves plugins with a blank $location manifest: $content',
+    async ({ location, content }) => {
+      const f = fixture()
+      const directory =
+        location === 'configured'
+          ? join(f.root, 'custom-plugin')
+          : join(f.configDir, 'plugins', 'synced', 'custom-plugin')
+      const path = join(directory, '.claude-plugin', 'plugin.json')
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, content)
+      if (location === 'configured') {
+        f.env.CLAUDE_CODE_PLUGIN_DIRS = directory
+      }
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      expect(await f.launch()).toEqual([
+        ...(location === 'configured' ? [directory] : []),
+        join(f.bundle, 'reply-markdown'),
+        join(f.bundle, 'reply-media')
+      ])
+      expect(readFileSync(path, 'utf8')).toBe(content)
+      expect(warning).not.toHaveBeenCalled()
+    }
+  )
+
   it('checks the inherited daemon profile when the pane does not select one', async () => {
     const f = fixture()
     delete f.env.CLAUDE_CONFIG_DIR
