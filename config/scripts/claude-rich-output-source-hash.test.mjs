@@ -76,6 +76,46 @@ export function runProcessSync({ args }) {
   return { root, put, build, runBuild, deployments }
 }
 
+test('a cached workspace package build still refreshes changed rich-output resources', () => {
+  const { root, put, deployments } = fixture()
+  put(
+    'config/scripts/build-workspace-packages.mjs',
+    readFileSync(join(scripts, 'build-workspace-packages.mjs'))
+  )
+  put('src/packages/process-host/package.json', '{"name":"@orca/process-host"}')
+  put('src/packages/process-host/source.ts', 'export const fixture = true')
+  for (const name of ['typescript', 'tsx', '@types/node']) {
+    put(`node_modules/${name}/package.json`, JSON.stringify({ name, version: '0.0.0' }))
+  }
+  put(
+    'package-builder.cjs',
+    `const { mkdirSync, writeFileSync, appendFileSync } = require('node:fs');
+const { join } = require('node:path');
+const root = process.cwd();
+const dist = join(root, 'src/packages/process-host/dist');
+mkdirSync(dist, { recursive: true });
+writeFileSync(join(dist, 'index.js'), 'export const built = true');
+appendFileSync(join(root, 'package-build.log'), 'build\\n');`
+  )
+  const build = () => {
+    const result = runProcessSync({
+      program: process.execPath,
+      args: [join(root, 'config/scripts/build-workspace-packages.mjs')],
+      cwd: root,
+      env: { ...process.env, npm_execpath: join(root, 'package-builder.cjs') },
+      timeoutMs: 30_000
+    })
+    expect(result.code, result.stderr).toBe(0)
+  }
+  build()
+  expect(existsSync(join(root, 'out/claude-rich-output/manifest.json'))).toBe(true)
+  put('resources/claude-rich-output/foo', 'updated')
+  build()
+  expect(readFileSync(join(root, 'package-build.log'), 'utf8')).toBe('build\n')
+  expect(deployments()).toBe(2)
+  expect(readFileSync(join(root, 'out/claude-rich-output/foo'), 'utf8')).toBe('updated')
+})
+
 test('the build rejects an unsafe dependency filename before publishing its manifest', () => {
   const { root, put, runBuild } = fixture()
   put('resources/claude-rich-output/notes with spaces.txt', 'dependency asset')
