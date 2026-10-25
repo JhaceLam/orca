@@ -46,6 +46,26 @@ describe.skipIf(process.platform === 'win32')(
         lockDir: fence,
         token: 'holder-1'
       })
+    const startMutation = (script: string, beforeStart = '') => {
+      const run = spawnProcess({
+        program: '/bin/sh',
+        args: ['-c', beforeStart + mutation(`printf 'ORCA_MUTATION_STARTED\\n' >&2; ${script}`)]
+      })
+      const started = new Promise<void>((resolve, reject) => {
+        let stderr = ''
+        run.stderr?.on('data', (chunk: Buffer | string) => {
+          stderr += chunk.toString()
+          if (stderr.includes('ORCA_MUTATION_STARTED\n')) {
+            resolve()
+          }
+        })
+        run.once('error', reject)
+        run.once('exit', (code, signal) =>
+          reject(new Error(`Mutation exited before readiness: ${code}/${signal}: ${stderr}`))
+        )
+      })
+      return { run, started }
+    }
     afterEach(() => {
       rmSync(base, { recursive: true, force: true })
     })
@@ -54,12 +74,31 @@ describe.skipIf(process.platform === 'win32')(
     const steal = (): Promise<string> => sh(tryStealInstallLockCommand(posix, fence, STALE_SECONDS))
     const age = (): number => Date.now() / 1000 - statSync(fence).mtimeMs / 1000
 
-    it('is not stolen while a long mutation runs, and is once its holder dies', async () => {
-      const run = spawnProcess({
-        program: '/bin/sh',
-        args: ['-c', mutation('sleep 30')]
-      })
+    it('reports readiness only after a delayed startup owns its lock', async () => {
+      const gate = join(base, 'allow-mutation')
+      const { run, started } = startMutation(
+        'sleep 6',
+        `while [ ! -f '${gate}' ]; do sleep 0.01; done; `
+      )
+      const released = new Promise<void>((resolve) =>
+        setImmediate(() => {
+          writeFileSync(gate, 'ready')
+          resolve()
+        })
+      )
       try {
+        await started
+        expect(existsSync(join(base, 'orcad-state-mutation.lock', 'pid'))).toBe(true)
+      } finally {
+        await released
+        run.kill('SIGKILL')
+      }
+    }, 20_000)
+
+    it('is not stolen while a long mutation runs, and is once its holder dies', async () => {
+      const { run, started } = startMutation('sleep 30')
+      try {
+        await started
         const pidFile = join(base, 'orcad-state-mutation.lock', 'pid')
         await expect
           .poll(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim())
@@ -83,8 +122,9 @@ describe.skipIf(process.platform === 'win32')(
     }, 20_000)
 
     it('stops refreshing a fence another run took over mid-mutation, and keeps its token', async () => {
-      const run = spawnProcess({ program: '/bin/sh', args: ['-c', mutation('sleep 6')] })
+      const { run, started } = startMutation('sleep 6')
       try {
+        await started
         await expect
           .poll(() => existsSync(join(base, 'orcad-state-mutation.lock', 'pid')))
           .toBe(true)

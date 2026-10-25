@@ -1,7 +1,10 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import type * as FileSystem from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type * as ParcelWatcher from '@parcel/watcher'
 import type { KeybindingOverrides } from '../../shared/keybindings'
 import { fingerprintPluginConsent } from '../../shared/plugins/plugin-consent-fingerprint'
 import { pluginManifestSchema, type PluginManifest } from '../../shared/plugins/plugin-manifest'
@@ -9,6 +12,58 @@ import type { PluginWorkerHandle } from './plugin-host-process'
 import { PluginService } from './plugin-service'
 import type { PluginWorkerFactory } from './plugin-worker-manager'
 import { hashPluginTree } from './plugin-content-hash'
+
+type WatcherFixtureLifetime = {
+  subscriptions: Promise<ParcelWatcher.AsyncSubscription>[]
+  releasing: Set<string>
+  blockUnsubscribe: Promise<void> | undefined
+  verifyDeletion: boolean
+}
+
+const watcherLifetime = vi.hoisted((): WatcherFixtureLifetime => ({
+  subscriptions: [],
+  releasing: new Set(),
+  blockUnsubscribe: undefined,
+  verifyDeletion: false
+}))
+
+vi.mock('@parcel/watcher', async (original) => {
+  const actual = await original<typeof ParcelWatcher>()
+  return {
+    ...actual,
+    subscribe: (...args: Parameters<typeof actual.subscribe>) => {
+      const pending = actual.subscribe(...args).then((subscription) => {
+        let closing: Promise<void> | undefined
+        return {
+          unsubscribe: () => {
+            closing ??= (async () => {
+              watcherLifetime.releasing.add(args[0])
+              await watcherLifetime.blockUnsubscribe
+              await subscription.unsubscribe()
+              watcherLifetime.releasing.delete(args[0])
+            })()
+            return closing
+          }
+        }
+      })
+      watcherLifetime.subscriptions.push(pending)
+      return pending
+    }
+  }
+})
+
+vi.mock('node:fs/promises', async (original) => {
+  const actual = await original<typeof FileSystem>()
+  return {
+    ...actual,
+    rm: (...args: Parameters<typeof actual.rm>) => {
+      if (watcherLifetime.verifyDeletion && watcherLifetime.releasing.size > 0) {
+        return Promise.reject(new Error('Fixture root deleted before native watcher release'))
+      }
+      return actual.rm(...args)
+    }
+  }
+})
 
 const roots: string[] = []
 const services: PluginService[] = []
@@ -106,13 +161,54 @@ async function activate(service: PluginService): Promise<void> {
   await service.invokeCommand(pluginKey, 'run')
 }
 
-afterEach(async () => {
+async function cleanupFixtures(): Promise<void> {
   vi.useRealTimers()
   await Promise.all(services.splice(0).map((service) => service.dispose()))
+  for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
+    await subscription.unsubscribe()
+  }
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
-})
+}
+
+afterEach(cleanupFixtures)
 
 describe('PluginService worker reconciliation', () => {
+  it('waits for native watcher release before deleting a fixture root', async () => {
+    const root = await pluginRoot()
+    const harness = createHarness(root)
+    await activate(harness.service)
+    await vi.waitFor(() => expect(watcherLifetime.subscriptions.length).toBeGreaterThan(0))
+    await Promise.all(watcherLifetime.subscriptions)
+    const gate = Promise.withResolvers<void>()
+    const disposed = Promise.withResolvers<void>()
+    const dispose = harness.service.dispose.bind(harness.service)
+    const spy = vi.spyOn(harness.service, 'dispose').mockImplementation(async () => {
+      await dispose()
+      disposed.resolve()
+    })
+    watcherLifetime.blockUnsubscribe = gate.promise
+    watcherLifetime.verifyDeletion = true
+    try {
+      const cleanup = cleanupFixtures().then(
+        () => null,
+        (error: unknown) => error
+      )
+      await disposed.promise
+      setImmediate(() => gate.resolve())
+      expect(await cleanup).toBeNull()
+      expect(existsSync(root)).toBe(false)
+    } finally {
+      gate.resolve()
+      watcherLifetime.blockUnsubscribe = undefined
+      watcherLifetime.verifyDeletion = false
+      for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
+        await subscription.unsubscribe()
+      }
+      spy.mockRestore()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it('blocks every runtime surface until a saved override resolves a content conflict', async () => {
     const conflictingManifest = (id: string): PluginManifest =>
       pluginManifestSchema.parse({
