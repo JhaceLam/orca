@@ -173,43 +173,62 @@ async function cleanupFixtures(): Promise<void> {
 afterEach(cleanupFixtures)
 
 describe('PluginService worker reconciliation', () => {
-  it('waits for native watcher release before deleting a fixture root', async () => {
-    const root = await pluginRoot()
-    const harness = createHarness(root)
-    await activate(harness.service)
-    await vi.waitFor(() => expect(watcherLifetime.subscriptions.length).toBeGreaterThan(0))
-    await Promise.all(watcherLifetime.subscriptions)
-    const gate = Promise.withResolvers<void>()
-    const disposed = Promise.withResolvers<void>()
-    const dispose = harness.service.dispose.bind(harness.service)
-    const spy = vi.spyOn(harness.service, 'dispose').mockImplementation(async () => {
-      await dispose()
-      disposed.resolve()
-    })
-    watcherLifetime.blockUnsubscribe = gate.promise
-    watcherLifetime.verifyDeletion = true
-    try {
+  it.each([false, true])(
+    'waits for native watcher release when verification fails=%s',
+    async (verificationFails) => {
+      const root = await pluginRoot()
+      const harness = createHarness(root)
+      await activate(harness.service)
+      await vi.waitFor(() => expect(watcherLifetime.subscriptions.length).toBeGreaterThan(0))
+      await Promise.all(watcherLifetime.subscriptions)
+      const gate = Promise.withResolvers<void>()
+      const disposed = Promise.withResolvers<void>()
+      const dispose = harness.service.dispose.bind(harness.service)
+      const spy = vi.spyOn(harness.service, 'dispose').mockImplementation(async () => {
+        await dispose()
+        disposed.resolve()
+      })
+      watcherLifetime.blockUnsubscribe = gate.promise.then(
+        () => new Promise<void>((resolve) => setImmediate(resolve))
+      )
+      watcherLifetime.verifyDeletion = true
       const cleanup = cleanupFixtures().then(
         () => null,
         (error: unknown) => error
       )
-      await disposed.promise
-      await vi.waitFor(() => expect(watcherLifetime.releasing.size).toBeGreaterThan(0))
-      expect(existsSync(root)).toBe(true)
-      setImmediate(() => gate.resolve())
+      const assertionFailure = new Error('controlled verification failure')
+      let failure: unknown
+      try {
+        await disposed.promise
+        await vi.waitFor(() => expect(watcherLifetime.releasing.size).toBeGreaterThan(0))
+        expect(existsSync(root)).toBe(true)
+        if (verificationFails) {
+          throw assertionFailure
+        }
+        setImmediate(() => gate.resolve())
+        expect(await cleanup).toBeNull()
+        expect(existsSync(root)).toBe(false)
+      } catch (error) {
+        failure = error
+      } finally {
+        gate.resolve()
+        try {
+          await cleanup
+          watcherLifetime.blockUnsubscribe = undefined
+          for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
+            await subscription.unsubscribe()
+          }
+          await rm(root, { recursive: true, force: true })
+        } finally {
+          watcherLifetime.verifyDeletion = false
+          spy.mockRestore()
+        }
+      }
+      expect(failure).toBe(verificationFails ? assertionFailure : undefined)
       expect(await cleanup).toBeNull()
       expect(existsSync(root)).toBe(false)
-    } finally {
-      gate.resolve()
-      watcherLifetime.blockUnsubscribe = undefined
-      watcherLifetime.verifyDeletion = false
-      for (const subscription of await Promise.all(watcherLifetime.subscriptions.splice(0))) {
-        await subscription.unsubscribe()
-      }
-      spy.mockRestore()
-      await rm(root, { recursive: true, force: true })
     }
-  })
+  )
 
   it('blocks every runtime surface until a saved override resolves a content conflict', async () => {
     const conflictingManifest = (id: string): PluginManifest =>
