@@ -10,7 +10,8 @@ vi.mock('electron', () => ({ app: {} }))
 import { serveSimKillArgs } from './serve-sim-execution'
 
 const SERVE_SIM_ENTRY = join(
-  dirname(createRequire(import.meta.url).resolve('serve-sim/middleware')),
+  dirname(createRequire(import.meta.url).resolve('serve-sim/package.json')),
+  'dist',
   'serve-sim.js'
 )
 const DEVICE_A = 'AAAAAAAA-0000-0000-0000-000000000001'

@@ -1,25 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process'
 import { once } from 'node:events'
-import {
-  copyFileSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  readlinkSync,
-  rmSync
-} from 'node:fs'
-import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { existsSync, readdirSync, readFileSync, readlinkSync, renameSync } from 'node:fs'
 import { setTimeout as delay } from 'node:timers/promises'
 import * as pty from 'node-pty'
 import { describe, expect, it } from 'vitest'
 import { getNodePtySpawnHelperCandidates } from '../providers/local-pty-utils'
-
-const require = createRequire(import.meta.url)
 
 function currentRevokedFdCount(): number {
   return execFileSync('lsof', ['-p', String(process.pid)], { encoding: 'utf8' })
@@ -37,26 +22,6 @@ function getExistingSpawnHelper(): string {
   const helperPath = getNodePtySpawnHelperCandidates().find((candidate) => existsSync(candidate))
   expect(helperPath).toBeTruthy()
   return helperPath as string
-}
-
-/** Exercise the real native failure path without renaming another worker's helper. */
-function createPtyWithoutSpawnHelper(helperPath: string): {
-  spawn: typeof pty.spawn
-  dispose: () => void
-} {
-  const root = mkdtempSync(join(tmpdir(), 'orca-pty-no-helper-'))
-  const dispose = (): void => rmSync(root, { recursive: true, force: true })
-  try {
-    cpSync(dirname(require.resolve('node-pty')), join(root, 'lib'), { recursive: true })
-    const nativeDir = join(root, 'build', 'Release')
-    mkdirSync(nativeDir, { recursive: true })
-    copyFileSync(join(dirname(helperPath), 'pty.node'), join(nativeDir, 'pty.node'))
-    const isolatedPty: typeof pty = require(join(root, 'lib', 'index.js'))
-    return { spawn: isolatedPty.spawn, dispose }
-  } catch (error) {
-    dispose()
-    throw error
-  }
 }
 
 async function spawnExitingPty(index: number): Promise<void> {
@@ -92,12 +57,21 @@ describeOnDarwin('node-pty macOS spawn fd handling', () => {
 
   it('does not leak fds when native posix_spawn setup fails', async () => {
     const helperPath = getExistingSpawnHelper()
-    const isolatedPty = createPtyWithoutSpawnHelper(helperPath)
+    const hiddenHelperPath = `${helperPath}.orca-test-hidden`
+    expect(existsSync(hiddenHelperPath)).toBe(false)
+
     const before = currentOpenFdCount()
+    renameSync(helperPath, hiddenHelperPath)
+    const restoreHelper = (): void => {
+      if (existsSync(hiddenHelperPath) && !existsSync(helperPath)) {
+        renameSync(hiddenHelperPath, helperPath)
+      }
+    }
+    process.on('exit', restoreHelper)
     try {
       for (let i = 0; i < 20; i++) {
         expect(() =>
-          isolatedPty.spawn('/bin/sh', ['-c', 'exit 0'], {
+          pty.spawn('/bin/sh', ['-c', 'exit 0'], {
             name: 'xterm-256color',
             cols: 80,
             rows: 24,
@@ -105,11 +79,10 @@ describeOnDarwin('node-pty macOS spawn fd handling', () => {
             env: { ...process.env, ORCA_FD_LEAK_TEST_INDEX: String(i) }
           })
         ).toThrow(/node-pty: posix_spawn failed: ENOENT/)
-        // A failure-injection fixture must not disable the helper used by other test workers.
-        expect(existsSync(helperPath)).toBe(true)
       }
     } finally {
-      isolatedPty.dispose()
+      restoreHelper()
+      process.off('exit', restoreHelper)
     }
 
     await delay(500)

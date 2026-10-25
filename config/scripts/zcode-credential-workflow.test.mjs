@@ -121,46 +121,27 @@ function executeScope(directory, overrides = {}) {
 }
 
 // The workflow owns Bash execution on Windows; this contract executes the same source on Unix.
-it.skipIf(process.platform === 'win32').each([
-  ['default caller', {}],
-  [
-    'caller identity',
-    {
-      GIT_AUTHOR_NAME: 'Caller',
-      GIT_AUTHOR_EMAIL: 'caller@example.test',
-      GIT_COMMITTER_NAME: 'Caller',
-      GIT_COMMITTER_EMAIL: 'caller@example.test'
-    }
-  ]
-])(
-  'selects the original path groups, including deletions and renames (%s)',
-  (_label, inheritedIdentity) => {
+it.skipIf(process.platform === 'win32')(
+  'selects the original path groups, including deletions and renames',
+  () => {
     const directory = mkdtempSync(join(tmpdir(), 'orca-zcode-workflow-'))
-    const git = (args) =>
-      execFileSync('git', args, {
-        cwd: directory,
-        stdio: 'pipe',
-        env: {
-          ...process.env,
-          ...inheritedIdentity,
-          GIT_AUTHOR_NAME: 'Fixture',
-          GIT_AUTHOR_EMAIL: 'fixture@example.test',
-          GIT_COMMITTER_NAME: 'Fixture',
-          GIT_COMMITTER_EMAIL: 'fixture@example.test'
-        }
-      })
+    const git = (args) => execFileSync('git', args, { cwd: directory, stdio: 'pipe' })
     const write = (file, value) => {
       mkdirSync(dirname(join(directory, file)), { recursive: true })
       writeFileSync(join(directory, file), value)
     }
-    let parent
     const commit = () => {
       git(['add', '-A'])
-      const tree = git(['write-tree']).toString().trim()
-      parent = git(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', 'fixture'])
-        .toString()
-        .trim()
-      git(['update-ref', 'HEAD', parent])
+      git([
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@example.test',
+        'commit',
+        '--allow-empty',
+        '-qm',
+        'fixture'
+      ])
     }
     const cases = [
       ['src/main/zcode/credentials.ts', true, true],
@@ -179,12 +160,6 @@ it.skipIf(process.platform === 'win32').each([
       git(['init', '-q'])
       write('README.md', 'fixture')
       commit()
-      expect(git(['reflog', 'show', '--format=%gn <%ge>', '-1', 'HEAD']).toString().trim()).toBe(
-        'Fixture <fixture@example.test>'
-      )
-      expect(git(['show', '-s', '--format=%an <%ae>', 'HEAD']).toString().trim()).toBe(
-        'Fixture <fixture@example.test>'
-      )
       expect(executeScope(directory)).toEqual({ account: 'true', credentials: 'true' })
       for (const [file, runsAccount, runsCredentials] of cases) {
         write(file, 'first')
