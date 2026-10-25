@@ -194,6 +194,8 @@ describe('PluginService worker reconciliation', () => {
         (error: unknown) => error
       )
       await disposed.promise
+      await vi.waitFor(() => expect(watcherLifetime.releasing.size).toBeGreaterThan(0))
+      expect(existsSync(root)).toBe(true)
       setImmediate(() => gate.resolve())
       expect(await cleanup).toBeNull()
       expect(existsSync(root)).toBe(false)
