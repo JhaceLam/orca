@@ -18,7 +18,20 @@ const root = fileURLToPath(new URL('../..', import.meta.url))
 const output = join(root, 'out', 'claude-rich-output')
 const marker = join(output, '.source-hash')
 const key = computeClaudeRichOutputSourceHash(root)
-if (!existsSync(marker) || readFileSync(marker, 'utf8') !== key) {
+function deploymentIsComplete() {
+  try {
+    const directory = `${realpathSync(output)}${sep}`
+    return claudeRichOutputAssetFilenames(
+      readFileSync(join(output, 'manifest.json'), 'utf8')
+    ).every((asset) => {
+      const file = join(root, 'out', asset)
+      return statSync(file).isFile() && realpathSync(file).startsWith(directory)
+    })
+  } catch {
+    return false
+  }
+}
+if (!existsSync(marker) || readFileSync(marker, 'utf8') !== key || !deploymentIsComplete()) {
   const result = runProcessSync({
     program: 'pnpm',
     args: [

@@ -48,7 +48,7 @@ function fixture() {
   )
   put(
     'node_modules/@orca/process-host/index.js',
-    `import { appendFileSync, cpSync, mkdirSync, rmSync } from 'node:fs';
+    `import { appendFileSync, cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 export function runProcessSync({ args }) {
   const root = process.cwd();
@@ -56,6 +56,8 @@ export function runProcessSync({ args }) {
   rmSync(output, { recursive: true, force: true });
   cpSync(join(root, 'resources/claude-rich-output'), output, { recursive: true });
   mkdirSync(join(output, 'node_modules/@mathjax/src'), { recursive: true });
+  mkdirSync(join(output, 'node_modules/@mathjax/src/bundle'), { recursive: true });
+  writeFileSync(join(output, 'node_modules/@mathjax/src/bundle/node-main.js'), 'fixture dependency');
   mkdirSync(join(output, 'node_modules/@mathjax/mathjax-newcm-font'), { recursive: true });
   appendFileSync(join(root, 'deploy.log'), 'deploy\\n');
   return { code: 0 };
@@ -147,6 +149,46 @@ test('unchanged inputs reuse the deployment, while changed content refreshes it'
   build()
   expect(deployments()).toBe(2)
   expect(readFileSync(join(root, 'out/claude-rich-output/foo'), 'utf8')).toBe('updated')
+})
+
+test.each([
+  ['plugin directory', 'reply-markdown', 'reply-markdown/hooks/register.tsx', false],
+  ['media entry', 'reply-media/hooks/register.tsx', 'reply-media/hooks/register.tsx', false],
+  [
+    'renderer dependency',
+    'node_modules/@mathjax/src/bundle/node-main.js',
+    'node_modules/@mathjax/src/bundle/node-main.js',
+    false
+  ],
+  [
+    'entry replaced by a directory',
+    'reply-markdown/hooks/register.tsx',
+    'reply-markdown/hooks/register.tsx',
+    true
+  ]
+])('repairs cached output after losing a %s', (_name, missing, restored, replaceWithDirectory) => {
+  const { root, put, build, deployments } = fixture()
+  for (const name of ['reply-markdown', 'reply-media']) {
+    put(`resources/claude-rich-output/${name}/.claude-plugin/plugin.json`, JSON.stringify({ name }))
+    put(`resources/claude-rich-output/${name}/hooks/register.tsx`, `export const name = '${name}'`)
+  }
+  build()
+  const output = join(root, 'out/claude-rich-output')
+  const marker = readFileSync(join(output, '.source-hash'), 'utf8')
+  const expected = readFileSync(join(output, restored), 'utf8')
+  rmSync(join(output, missing), { recursive: true, force: true })
+  if (replaceWithDirectory) {
+    mkdirSync(join(output, missing))
+  }
+  expect(readFileSync(join(output, '.source-hash'), 'utf8')).toBe(marker)
+
+  build()
+
+  expect(deployments()).toBe(2)
+  expect(readFileSync(join(output, restored), 'utf8')).toBe(expected)
+  expect(JSON.parse(readFileSync(join(output, 'manifest.json'), 'utf8')).assets).toContain(
+    `claude-rich-output/${restored}`
+  )
 })
 
 for (const name of [
