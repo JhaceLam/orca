@@ -162,14 +162,14 @@ function createScopeFixture(directory, inheritedEnv = process.env) {
     parent = git(['commit-tree', tree, ...(parent ? ['-p', parent] : []), '-m', 'fixture'])
       .toString()
       .trim()
-    expect(realpathSync(git(['rev-parse', '--absolute-git-dir']).toString().trim())).toBe(
-      realpathSync(join(directory, '.git'))
+    expect(realpathSync.native(git(['rev-parse', '--absolute-git-dir']).toString().trim())).toBe(
+      realpathSync.native(join(directory, '.git'))
     )
     git(['update-ref', 'HEAD', parent])
   }
   git(['init', '-q'])
-  expect(realpathSync(git(['rev-parse', '--absolute-git-dir']).toString().trim())).toBe(
-    realpathSync(join(directory, '.git'))
+  expect(realpathSync.native(git(['rev-parse', '--absolute-git-dir']).toString().trim())).toBe(
+    realpathSync.native(join(directory, '.git'))
   )
   return { git, commit }
 }

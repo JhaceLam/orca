@@ -38,9 +38,9 @@ async function createRepo(inheritedEnv = process.env): Promise<string> {
   tempRoots.push(root)
   const repoPath = join(root, 'repo')
   git(root, ['init', '--quiet', repoPath], inheritedEnv)
-  expect(realpathSync(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))).toBe(
-    realpathSync(join(repoPath, '.git'))
-  )
+  expect(
+    realpathSync.native(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))
+  ).toBe(realpathSync.native(join(repoPath, '.git')))
   git(repoPath, ['symbolic-ref', 'HEAD', 'refs/heads/main'], inheritedEnv)
   git(repoPath, ['config', 'user.email', 'test@example.com'], inheritedEnv)
   git(repoPath, ['config', 'user.name', 'Test User'], inheritedEnv)
@@ -64,9 +64,9 @@ function commitEmpty(repoPath: string, count: number, inheritedEnv = process.env
       inheritedEnv
     )
   }
-  expect(realpathSync(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))).toBe(
-    realpathSync(join(repoPath, '.git'))
-  )
+  expect(
+    realpathSync.native(git(repoPath, ['rev-parse', '--absolute-git-dir'], inheritedEnv))
+  ).toBe(realpathSync.native(join(repoPath, '.git')))
   git(repoPath, ['update-ref', 'HEAD', parent], inheritedEnv)
 }
 
