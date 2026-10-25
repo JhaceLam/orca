@@ -11,21 +11,24 @@ const dir = realpathSync(mkdtempSync(join(tmpdir(), 'picture-test-')))
 after(() => rmSync(dir, { recursive: true }))
 writeFileSync(join(dir, 'a.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="8"/>')
 spawnSync('rsvg-convert', ['--output', join(dir, 'a.png'), join(dir, 'a.svg')])
-for (const name of ['a.jpg', 'space # image.webp']) {
-  const made = spawnSync('ffmpeg', [
-    '-v',
-    'error',
-    '-y',
-    '-i',
-    join(dir, 'a.png'),
-    '-frames:v',
-    '1',
-    '-threads',
-    '1',
-    join(dir, name)
-  ])
-  assert.equal(made.status, 0, String(made.stderr))
-}
+const made = spawnSync('ffmpeg', [
+  '-v',
+  'error',
+  '-y',
+  '-i',
+  join(dir, 'a.png'),
+  '-frames:v',
+  '1',
+  '-threads',
+  '1',
+  join(dir, 'a.jpg')
+])
+assert.equal(made.status, 0, String(made.stderr))
+// Preserve the transparent 12x8 input without requiring a host WebP encoder.
+writeFileSync(
+  join(dir, 'space # image.webp'),
+  Buffer.from('UklGRhoAAABXRUJQVlA4TA0AAAAvC8ABEAcQERGIiP4HAA==', 'base64')
+)
 
 const picture = (path) =>
   spawnSync('node', [join(import.meta.dirname, 'picture.mjs')], {

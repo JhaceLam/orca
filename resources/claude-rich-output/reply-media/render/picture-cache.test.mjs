@@ -22,21 +22,24 @@ writeFileSync(
 const png = join(root, 'image.png')
 const rasterized = spawnSync('rsvg-convert', ['--output', png, join(root, 'image.svg')])
 assert.equal(rasterized.status, 0, rasterized.stderr?.toString())
-for (const extension of ['jpg', 'webp']) {
-  const result = spawnSync('ffmpeg', [
-    '-v',
-    'error',
-    '-y',
-    '-i',
-    png,
-    '-frames:v',
-    '1',
-    '-threads',
-    '1',
-    join(root, `image.${extension}`)
-  ])
-  assert.equal(result.status, 0, result.stderr?.toString())
-}
+const result = spawnSync('ffmpeg', [
+  '-v',
+  'error',
+  '-y',
+  '-i',
+  png,
+  '-frames:v',
+  '1',
+  '-threads',
+  '1',
+  join(root, 'image.jpg')
+])
+assert.equal(result.status, 0, result.stderr?.toString())
+// The lossless 12x8 input exercises decoding without requiring a host WebP encoder.
+writeFileSync(
+  join(root, 'image.webp'),
+  Buffer.from('UklGRhwAAABXRUJQVlA4TA8AAAAvC8ABAAcQ/Y/+ByKi/wEA', 'base64')
+)
 
 function fixture(extension) {
   const cache = realpathSync(mkdtempSync(join(root, 'cache-')))
