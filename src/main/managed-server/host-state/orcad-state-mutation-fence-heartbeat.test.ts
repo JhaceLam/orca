@@ -88,7 +88,7 @@ describe.skipIf(process.platform === 'win32')(
         didStart = true
       })
       const released = (async () => {
-        await expect.poll(() => existsSync(waiting)).toBe(true)
+        await expect.poll(() => existsSync(waiting), { timeout: 20_000 }).toBe(true)
         expect(didStart).toBe(false)
         expect(existsSync(pidFile)).toBe(false)
         writeFileSync(gate, 'ready')

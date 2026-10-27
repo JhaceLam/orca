@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import * as processHost from '@orca/process-host'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { removeTree } from '../../shared/windows-transient-lock-removal'
@@ -196,13 +197,31 @@ describe.skipIf(process.platform === 'win32')(
       const good = await cliInDirectory('good')
       vi.stubEnv('PATH', [hung, good].join(path.delimiter))
 
-      await expect(findRunnableLocalCommand(COMMAND)).resolves.toEqual({
-        status: 'available',
-        binary: path.join(good, COMMAND)
-      })
-      expect(await probedArgs(hung)).toEqual(['--version'])
-      expect(await probedArgs(good)).toEqual(['--version'])
-      expect(await readFile(marker, 'utf8')).toBe('terminated')
+      const runs = vi.spyOn(processHost, 'runProcess')
+      let timedOutProbe: Awaited<ReturnType<typeof processHost.runProcess>> | undefined
+      try {
+        await expect(findRunnableLocalCommand(COMMAND)).resolves.toEqual({
+          status: 'available',
+          binary: path.join(good, COMMAND)
+        })
+        const call =
+          runs.mock.results[
+            runs.mock.calls.findIndex(([spec]) => spec.program === path.join(hung, COMMAND))
+          ]
+        if (call?.type !== 'return') {
+          throw new Error('The real hung CLI probe did not return its process result')
+        }
+        timedOutProbe = await call.value
+        expect(timedOutProbe, JSON.stringify(timedOutProbe)).toMatchObject({ timedOut: true })
+        expect(await probedArgs(hung)).toEqual(['--version'])
+        expect(await probedArgs(good)).toEqual(['--version'])
+        expect(await readFile(marker, 'utf8')).toBe('terminated')
+      } catch (error) {
+        console.error('Real hung CLI probe result', timedOutProbe)
+        throw error
+      } finally {
+        runs.mockRestore()
+      }
     }, 15_000)
 
     it('uses the known Nix install directory after PATH copies fail', async () => {
