@@ -7,12 +7,16 @@ const NODE_RUNTIME_INCLUDE = [
   'src/main/shell-startup-feature-channel.test.ts',
   'src/main/codex/codex-session-index-heal-state.test.ts',
   'src/main/runtime/terminal/recovery/replaced-pane-handle-recovery.test.ts',
+  // Preserve exact Node filesystem inode, mode, and timestamp observations.
+  'src/main/hermes/hermes-config-preservation.test.ts',
   'config/scripts/vitest-sqlite-runtime-boundary.test.ts',
   'config/scripts/cloud-security-history-workflow.test.mjs',
   'config/scripts/skill-recipe-shell.test.mjs',
   'src/main/ssh/legacy-relay/ssh-relay-endpoint-incumbent-shell.integration.test.ts',
   'src/main/ssh/ssh-remote-commands.test.ts',
   'src/packages/process-host/src/run-process.test.ts',
+  // CLI probes assert the same Node process-group termination barrier.
+  'src/main/ipc/preflight-runnable-local-cli.test.ts',
   'tests/e2e/cursor-quota-transport.unit.test.ts',
   'tests/e2e/helpers/electron-process-shutdown.unit.test.ts',
   'src/main/ai-vault-search/session-search-index-writer.test.ts',

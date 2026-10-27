@@ -61,7 +61,24 @@ it('keeps exposed-GC heap measurements in the Node runtime project', () => {
   expect(missing).toEqual([])
 })
 
-it('collects the indirect native PTY shell fixture exactly once in the Node project', () => {
+it.each([
+  {
+    fixture: 'indirect native PTY shell fixture',
+    file: 'src/main/daemon/repro-13767-shell-ready-marker-lost-to-exec.test.ts',
+    pattern:
+      /[/\\]src[/\\]main[/\\]daemon[/\\]repro-13767-shell-ready-marker-lost-to-exec\.test\.ts$/
+  },
+  {
+    fixture: 'CLI process-group termination fixture',
+    file: 'src/main/ipc/preflight-runnable-local-cli.test.ts',
+    pattern: /[/\\]src[/\\]main[/\\]ipc[/\\]preflight-runnable-local-cli\.test\.ts$/
+  },
+  {
+    fixture: 'Hermes filesystem preservation fixture',
+    file: 'src/main/hermes/hermes-config-preservation.test.ts',
+    pattern: /[/\\]src[/\\]main[/\\]hermes[/\\]hermes-config-preservation\.test\.ts$/
+  }
+])('collects $fixture exactly once in the Node project', ({ file, pattern }) => {
   const directory = mkdtempSync(join(tmpdir(), 'orca-runtime-list-'))
   try {
     const output = join(directory, 'files.json')
@@ -72,7 +89,7 @@ it('collects the indirect native PTY shell fixture exactly once in the Node proj
         'list',
         '--config',
         'config/vitest.config.ts',
-        'src/main/daemon/repro-13767-shell-ready-marker-lost-to-exec.test.ts',
+        file,
         '--filesOnly',
         `--json=${output}`
       ],
@@ -83,9 +100,7 @@ it('collects the indirect native PTY shell fixture exactly once in the Node proj
     const collected: unknown = JSON.parse(readFileSync(output, 'utf8'))
     expect(collected).toEqual([
       expect.objectContaining({
-        file: expect.stringMatching(
-          /[/\\]src[/\\]main[/\\]daemon[/\\]repro-13767-shell-ready-marker-lost-to-exec\.test\.ts$/
-        ),
+        file: expect.stringMatching(pattern),
         projectName: 'node-runtime'
       })
     ])
