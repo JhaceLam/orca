@@ -119,4 +119,5 @@ if (process.argv[1] && realpathSync(process.argv[1]) === import.meta.filename) {
     }
     writeStamp(packageDir, inputs)
   }
+  await import('./build-claude-rich-output.mjs')
 }

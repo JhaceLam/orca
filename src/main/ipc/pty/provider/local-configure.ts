@@ -1,5 +1,6 @@
 import { getClaudeAgentViewService } from '../../../claude/agent-view-service'
 import { inheritOmpLaunchEnvironment } from '../host-env/omp-launch-environment'
+import { applyClaudeRichOutputEnv } from '../../../claude/claude-rich-output'
 import { getAppEnvironment } from '../../../../shared/app-environment'
 import type { OrcaRuntimeService } from '../../../runtime/orca-runtime'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
@@ -109,6 +110,13 @@ export function configureLocalPtyProvider(args: {
         disabledTuiAgents: ptySettings?.disabledTuiAgents,
         networkProxySettings: ptySettings,
         routeBrowserOpensToClient: runtime?.shouldRelayTerminalBrowserOpens?.()
+      })
+      await applyClaudeRichOutputEnv(env, {
+        isPackaged: getAppEnvironment().isPackaged(),
+        resourcesPath: process.resourcesPath,
+        launchAgent: ctx?.launchAgent,
+        isWsl: ctx?.isWsl,
+        cwd: ctx?.cwd
       })
       // Supply terminal identity at process start so agents can address orchestration without another RPC.
       const requestedHandle = baseEnv.ORCA_TERMINAL_HANDLE
