@@ -10,6 +10,46 @@ import {
 } from './xterm-kitty-placeholder-test-terminal.mjs'
 afterEach(() => vi.unstubAllGlobals())
 
+it('does not scan placeholder cells on image-free renders with cache recovery enabled', async () => {
+  const h = createPlaceholderTerminal({ readKittyImage: vi.fn(async () => undefined) })
+  try {
+    await write(h.terminal, 'ordinary terminal text')
+    const scan = vi.spyOn(h.kitty, '_placeholderCell')
+    render(h)
+    render(h)
+    expect(scan).not.toHaveBeenCalled()
+  } finally {
+    h.terminal.dispose()
+  }
+})
+
+it('still recovers placeholders hidden by an earlier parsed write', async () => {
+  let saved
+  const first = createPlaceholderTerminal({
+    onKittyImageChanged: (_id, value) => {
+      if (value) {
+        saved = value
+      }
+    }
+  })
+  try {
+    await writeKitty(first.terminal, 'a=T,f=100,i=7,U=1,c=2,r=2', PNG)
+  } finally {
+    first.terminal.dispose()
+  }
+  const read = vi.fn(async () => saved)
+  const h = createPlaceholderTerminal({ readKittyImage: read })
+  try {
+    await write(h.terminal, placeholderCells(7))
+    await write(h.terminal, '\r')
+    render(h)
+    await vi.waitFor(() => expect(h.kitty.getImage(7)).toBeDefined())
+    expect(read).toHaveBeenCalledTimes(1)
+  } finally {
+    h.terminal.dispose()
+  }
+})
+
 it.each([
   { name: 'lowercase full delete and re-place', selector: 'i', partial: false, replace: true },
   {

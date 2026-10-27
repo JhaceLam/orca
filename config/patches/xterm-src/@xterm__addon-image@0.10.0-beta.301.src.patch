@@ -1318,10 +1318,10 @@ index 4288dd0a4180eca8f3ae28ec0805f834b2a0a629..acb4404751339249501a89846382bddb
 +  };
 +}
 diff --git a/src/kitty/KittyImageStorage.ts b/src/kitty/KittyImageStorage.ts
-index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce7952d621 100644
+index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..fc0aacc6bfab219eaceb0bf2c0b819ec505a5a45 100644
 --- a/src/kitty/KittyImageStorage.ts
 +++ b/src/kitty/KittyImageStorage.ts
-@@ -3,49 +3,66 @@
+@@ -3,49 +3,67 @@
   * @license MIT
   */
  
@@ -1372,6 +1372,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
    private readonly _kittyIdToStorageId: Map<number, number> = new Map();
    private readonly _storageIdToKittyId: Map<number, number> = new Map();
 +  private readonly _virtualPlacements: Map<number, Map<number, IVirtualPlacement>> = new Map();
++  private _viewportHasPlaceholders = false;
 +  private readonly _virtualStorageIds = new Map<number, { kittyId: number, placementId: number }>();
  
    private readonly _previousOnImageDeleted: ((storageId: number) => void) | undefined;
@@ -1401,7 +1402,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
    ) {
      this._previousOnImageDeleted = this._storage.onImageDeleted;
      this._wrappedOnImageDeleted = (storageId: number) => {
-@@ -53,6 +70,27 @@ export class KittyImageStorage implements IDisposable {
+@@ -53,6 +71,29 @@ export class KittyImageStorage implements IDisposable {
        this._handleStorageImageDeleted(storageId);
      };
      this._storage.onImageDeleted = this._wrappedOnImageDeleted;
@@ -1410,6 +1411,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
 +
 +  // Reserved placeholder text stays in the buffer but never draws as a glyph.
 +  public hidePlaceholderGlyphs(terminal: ITerminalExt): void {
++    this._viewportHasPlaceholders = false;
 +    const buffer = terminal._core.buffer;
 +    let cell: CellData | undefined;
 +    const start = terminal.buffer.active.viewportY;
@@ -1417,9 +1419,10 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
 +      const line = buffer.lines.get(row);
 +      if (!line) continue;
 +      for (let col = 0; col < terminal.cols; ++col) {
-+        if (line.getFg(col) & FgFlags.INVISIBLE) continue;
 +        if (line.getCodePoint(col) !== PLACEHOLDER_CHAR
 +          && (!line.isCombined(col) || line.getString(col).codePointAt(0) !== PLACEHOLDER_CHAR)) continue;
++        this._viewportHasPlaceholders = true;
++        if (line.getFg(col) & FgFlags.INVISIBLE) continue;
 +        cell ??= new CellData();
 +        line.loadCell(col, cell);
 +        cell.fg |= FgFlags.INVISIBLE;
@@ -1429,16 +1432,17 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
    }
  
    public reset(): void {
-@@ -60,6 +98,8 @@ export class KittyImageStorage implements IDisposable {
+@@ -60,6 +101,9 @@ export class KittyImageStorage implements IDisposable {
      this._images.clear();
      this._kittyIdToStorageId.clear();
      this._storageIdToKittyId.clear();
 +    this._virtualPlacements.clear();
 +    this._virtualStorageIds.clear();
++    this._viewportHasPlaceholders = false;
    }
  
    public dispose(): void {
-@@ -67,11 +107,15 @@ export class KittyImageStorage implements IDisposable {
+@@ -67,11 +111,15 @@ export class KittyImageStorage implements IDisposable {
      if (this._storage.onImageDeleted === this._wrappedOnImageDeleted) {
        this._storage.onImageDeleted = this._previousOnImageDeleted;
      }
@@ -1455,7 +1459,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
      const oldStorageId = this._kittyIdToStorageId.get(imageId);
      if (oldStorageId !== undefined) {
        this._storage.deleteImage(oldStorageId);
-@@ -83,6 +127,26 @@ export class KittyImageStorage implements IDisposable {
+@@ -83,6 +131,26 @@ export class KittyImageStorage implements IDisposable {
        this._evictUndisplayedImages();
      }
  
@@ -1482,7 +1486,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
      this._images.set(imageId, {
        ...imageData,
        id: imageId
-@@ -111,23 +175,109 @@ export class KittyImageStorage implements IDisposable {
+@@ -111,23 +179,109 @@ export class KittyImageStorage implements IDisposable {
      return this._images.get(kittyId);
    }
  
@@ -1600,7 +1604,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
    }
  
    public get images(): ReadonlyMap<number, IKittyImageData> {
-@@ -147,9 +297,99 @@ export class KittyImageStorage implements IDisposable {
+@@ -147,9 +301,99 @@ export class KittyImageStorage implements IDisposable {
        if (this._images.size <= KittyImageStorage._maxStoredImages / 2) {
          break;
        }
@@ -1614,7 +1618,7 @@ index 1f5c09ec9e2700f8f6dbd8436a1802217dfc99ef..80c8e710d39081c3f566e38fe11373ce
 +
 +  // Omitted diacritics inherit only from a consecutive matching placeholder.
 +  private readonly _renderPlaceholderLine = (line: IBufferLine, row: number, cols: number): void => {
-+    if (this._virtualPlacements.size === 0 && !this.restoreMissing) {
++    if (this._virtualPlacements.size === 0 && !(this.restoreMissing && this._viewportHasPlaceholders)) {
 +      return;
 +    }
 +    let runLength = 0;
