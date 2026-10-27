@@ -74,6 +74,7 @@ describe.skipIf(process.platform === 'win32')(
     const steal = (): Promise<string> => sh(tryStealInstallLockCommand(posix, fence, STALE_SECONDS))
     const age = (): number => Date.now() / 1000 - statSync(fence).mtimeMs / 1000
 
+    // Real shell startup and gated lock acquisition need this process deadline.
     it('reports readiness only after a delayed startup owns its lock', async () => {
       const gate = join(base, 'allow-mutation')
       const waiting = join(base, 'mutation-waiting')
