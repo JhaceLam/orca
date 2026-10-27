@@ -1,4 +1,4 @@
-import { runProcessSync } from '@orca/process-host'
+import { runProcess, runProcessSync } from '@orca/process-host'
 import {
   appendFileSync,
   existsSync,
@@ -48,6 +48,14 @@ function fixture() {
   )
   put('node_modules/esbuild/index.js', 'export async function build() {}')
   put(
+    'node_modules/proper-lockfile/package.json',
+    JSON.stringify({ type: 'module', exports: './index.js' })
+  )
+  put(
+    'node_modules/proper-lockfile/index.js',
+    `export { default } from ${JSON.stringify(import.meta.resolve('proper-lockfile'))}`
+  )
+  put(
     'node_modules/@orca/process-host/package.json',
     JSON.stringify({ type: 'module', exports: './index.js' })
   )
@@ -66,7 +74,8 @@ export function runProcessSync({ args }) {
   mkdirSync(join(output, 'node_modules/@mathjax/mathjax-newcm-font'), { recursive: true });
   appendFileSync(join(root, 'deploy.log'), 'deploy\\n');
   return { code: 0 };
-}`
+}
+export async function runProcess(options) { return runProcessSync(options) }`
   )
   const runBuild = (env = process.env) =>
     runProcessSync({
@@ -89,7 +98,7 @@ test.each(['cjs', 'mjs'])('deploys through npm_execpath without PATH pnpm (%s)',
   put('fixture-deploy.mjs', readFileSync(join(root, 'node_modules/@orca/process-host/index.js')))
   put(
     'node_modules/@orca/process-host/index.js',
-    `export { runProcessSync } from ${JSON.stringify(import.meta.resolve('@orca/process-host'))}`
+    `export { runProcess, runProcessSync } from ${JSON.stringify(import.meta.resolve('@orca/process-host'))}`
   )
   const entry = join(root, 'pnpm entry', `pnpm.${extension}`)
   put(
@@ -111,6 +120,107 @@ test.each(['cjs', 'mjs'])('deploys through npm_execpath without PATH pnpm (%s)',
     JSON.parse(readFileSync(join(root, 'out/claude-rich-output/manifest.json'), 'utf8')).assets
   ).toContain('claude-rich-output/foo')
 })
+
+test.each(['deploy', 'bundle'])(
+  'concurrent builders serialize the entire %s phase and reuse the completed bundle',
+  async (phase) => {
+    const { root, put, deployments } = fixture()
+    put(
+      'node_modules/@orca/process-host/index.js',
+      `export { runProcess, runProcessSync } from ${JSON.stringify(import.meta.resolve('@orca/process-host'))}`
+    )
+    put(
+      'fixture-deploy.mjs',
+      `import { appendFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const root = process.cwd();
+writeFileSync(join(root, 'active'), 'deploy', { flag: 'wx' });
+writeFileSync(join(root, 'deploy-entered'), '');
+if (process.env.BUILD_PHASE === 'deploy') {
+  const deadline = Date.now() + 15000;
+  while (!existsSync(join(root, 'release'))) {
+    if (Date.now() > deadline) throw new Error('deployment gate timed out');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+const output = process.argv.at(-1);
+rmSync(output, { recursive: true, force: true });
+cpSync(join(root, 'resources/claude-rich-output'), output, { recursive: true });
+mkdirSync(join(output, 'node_modules/@mathjax/src'), { recursive: true });
+mkdirSync(join(output, 'node_modules/@mathjax/mathjax-newcm-font'), { recursive: true });
+appendFileSync(join(root, 'deploy.log'), 'deploy\\n');`
+    )
+    put(
+      'node_modules/esbuild/index.js',
+      `import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { setTimeout } from 'node:timers/promises';
+export async function build({ outfile }) {
+  const root = process.cwd();
+  writeFileSync(join(root, 'bundle-entered'), '');
+  if (process.env.BUILD_PHASE === 'bundle') {
+    const deadline = Date.now() + 15000;
+    while (!existsSync(join(root, 'release'))) {
+      if (Date.now() > deadline) throw new Error('bundle gate timed out');
+      await setTimeout(10);
+    }
+  }
+  mkdirSync(dirname(outfile), { recursive: true });
+  writeFileSync(outfile, 'complete renderer');
+  rmSync(join(root, 'active'), { force: true });
+}`
+    )
+    put(
+      'fixture-builder.mjs',
+      `import { writeFileSync } from 'node:fs';
+import './node_modules/esbuild/index.js';
+import './node_modules/@orca/process-host/index.js';
+writeFileSync(process.argv[2], '');
+await import('./config/scripts/build-claude-rich-output.mjs');`
+    )
+    const children = []
+    const start = (name) => {
+      const child = runProcess({
+        program: process.execPath,
+        args: [join(root, 'fixture-builder.mjs'), join(root, `${name}-ready`)],
+        cwd: root,
+        env: { ...process.env, BUILD_PHASE: phase, npm_execpath: join(root, 'fixture-deploy.mjs') },
+        timeoutMs: 25_000
+      })
+      children.push(child)
+      return child
+    }
+    const waitFor = async (name) => {
+      await expect.poll(() => existsSync(join(root, name)), { timeout: 10_000 }).toBe(true)
+    }
+    try {
+      start('first')
+      await waitFor(`${phase}-entered`)
+      const second = start('second')
+      await waitFor('second-ready')
+      const outcome = await Promise.race([
+        second.then(() => 'exited'),
+        new Promise((resolve) => setTimeout(() => resolve('blocked'), 1000))
+      ])
+      expect(outcome).toBe('blocked')
+    } finally {
+      put('release', '')
+      const results = await Promise.all(children)
+      for (const result of results) {
+        expect(result.code, result.stderr).toBe(0)
+      }
+    }
+    expect(deployments()).toBe(1)
+    expect(
+      readFileSync(join(root, 'out/claude-rich-output/reply-media/render/process.mjs'), 'utf8')
+    ).toBe('complete renderer')
+    const manifest = JSON.parse(
+      readFileSync(join(root, 'out/claude-rich-output/manifest.json'), 'utf8')
+    )
+    expect(manifest.assets).toContain('claude-rich-output/reply-media/render/process.mjs')
+    expect(existsSync(join(root, 'out/.claude-rich-output-build.lock'))).toBe(false)
+  }
+)
 
 test('a cached workspace package build still refreshes changed rich-output resources', () => {
   const { root, put, deployments } = fixture()
@@ -183,6 +293,27 @@ test('unchanged inputs reuse the deployment, while changed content refreshes it'
   build()
   expect(deployments()).toBe(2)
   expect(readFileSync(join(root, 'out/claude-rich-output/foo'), 'utf8')).toBe('updated')
+})
+
+test('a failed bundle releases ownership and the next build repairs the incomplete output', () => {
+  const { root, put, build, runBuild, deployments } = fixture()
+  put(
+    'node_modules/esbuild/index.js',
+    "export async function build() { throw new Error('bundle failed') }"
+  )
+  const failed = runBuild()
+  expect(failed.code).not.toBe(0)
+  expect(failed.stderr).toContain('bundle failed')
+  expect(existsSync(join(root, 'out/.claude-rich-output-build.lock'))).toBe(false)
+  expect(existsSync(join(root, 'out/claude-rich-output/manifest.json'))).toBe(false)
+
+  put('node_modules/esbuild/index.js', 'export async function build() {}')
+  build()
+
+  expect(deployments()).toBe(2)
+  expect(readFileSync(join(root, 'out/claude-rich-output/foo'), 'utf8')).toBe('barvalue')
+  expect(existsSync(join(root, 'out/claude-rich-output/manifest.json'))).toBe(true)
+  expect(existsSync(join(root, 'out/.claude-rich-output-build.lock'))).toBe(false)
 })
 
 test.each([
