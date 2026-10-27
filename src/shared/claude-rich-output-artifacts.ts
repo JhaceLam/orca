@@ -10,6 +10,21 @@ export function isClaudeRichOutputAsset(path: string): boolean {
   )
 }
 
+export function claudeRichOutputTemplateAssetFilenames(
+  commonSha256: Readonly<Record<string, string>>
+): string[] {
+  const assets = Object.keys(commonSha256)
+    .filter(
+      (path) =>
+        path.startsWith(`${CLAUDE_RICH_OUTPUT_DIR}/`) && path !== CLAUDE_RICH_OUTPUT_MANIFEST
+    )
+    .sort()
+  if (assets.some((path) => !isClaudeRichOutputAsset(path))) {
+    throw new Error('Packaged orcad template names an unsafe rich output asset')
+  }
+  return assets
+}
+
 export function claudeRichOutputAssetFilenames(contents: string): string[] {
   const manifest: unknown = JSON.parse(contents)
   if (
