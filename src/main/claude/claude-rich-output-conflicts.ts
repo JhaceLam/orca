@@ -3,6 +3,7 @@ import { basename, delimiter, join, resolve } from 'node:path'
 import { defaultClaudeConfigDir } from './claude-config-dir-pin'
 import { isPlainObject } from '../agent-hooks/hooks-json-read'
 import {
+  parseClaudePluginInstall,
   readClaudePluginEnablement,
   resolveClaudePluginInstalls
 } from '../skills/claude-plugin-skill-sources'
@@ -108,11 +109,15 @@ export async function findClaudeRichOutputConflicts(
   const installedRecord = object(installed)
   if (
     installedRecord &&
-    (installedRecord.version !== 2 ||
-      !installedRecord.plugins ||
-      typeof installedRecord.plugins !== 'object' ||
-      Array.isArray(installedRecord.plugins) ||
-      Object.values(installedRecord.plugins).some((installs) => !Array.isArray(installs)))
+    (typeof installedRecord.version !== 'number' ||
+      !Number.isSafeInteger(installedRecord.version) ||
+      installedRecord.version < 2 ||
+      !isPlainObject(installedRecord.plugins) ||
+      Object.values(installedRecord.plugins).some(
+        (installs) =>
+          !Array.isArray(installs) ||
+          installs.some((install) => parseClaudePluginInstall(install) === null)
+      ))
   ) {
     throw new Error('Unrecognized Claude plugin install metadata')
   }

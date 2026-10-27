@@ -74,7 +74,7 @@ export function readClaudePluginEnablement(
   return enabled
 }
 
-function parseInstall(value: unknown): ClaudePluginInstall | null {
+export function parseClaudePluginInstall(value: unknown): ClaudePluginInstall | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null
   }
@@ -130,7 +130,7 @@ function selectActiveInstall(
 ): ClaudePluginInstall | null {
   return (
     values
-      .map(parseInstall)
+      .map(parseClaudePluginInstall)
       .filter((install): install is ClaudePluginInstall => install !== null)
       .filter(
         (install) =>

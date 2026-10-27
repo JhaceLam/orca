@@ -202,6 +202,65 @@ describe('preserving execution-host Claude plugins', () => {
     )
   })
 
+  it.each([2, 3])(
+    'accepts compatible version %s metadata with additional fields',
+    async (version) => {
+      const f = fixture()
+      const installPath = join(f.root, 'marketplace', 'custom-media')
+      f.plugin(installPath, 'reply-media')
+      const installFile = join(f.configDir, 'plugins', 'installed_plugins.json')
+      json(installFile, {
+        version,
+        generatedBy: 'newer-claude',
+        plugins: {
+          'pictures@user-market': [
+            { scope: 'user', installPath, provenance: { revision: 'new-field' } }
+          ]
+        }
+      })
+      const settingsFile = join(f.configDir, 'settings.json')
+      json(settingsFile, { enabledPlugins: { 'pictures@user-market': false } })
+      const before = [readFileSync(installFile, 'utf8'), readFileSync(settingsFile, 'utf8')]
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      expect(await f.launch()).toEqual([join(f.bundle, 'reply-markdown')])
+      expect(f.env.ORCA_CLAUDE_PLUGIN_DIRS).toBe(join(f.bundle, 'reply-markdown'))
+      expect([readFileSync(installFile, 'utf8'), readFileSync(settingsFile, 'utf8')]).toEqual(
+        before
+      )
+      expect(warning).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([2, 3])(
+    'preserves the original launch for an unknown version %s install shape',
+    async (version) => {
+      const f = fixture()
+      const original = join(f.root, 'original-plugin')
+      f.plugin(original, 'custom-plugin')
+      f.env.CLAUDE_CODE_PLUGIN_DIRS = original
+      const installFile = join(f.configDir, 'plugins', 'installed_plugins.json')
+      json(installFile, {
+        version,
+        plugins: {
+          'pictures@user-market': [
+            { scope: 'workspace', installPath: join(f.root, 'future-scope') }
+          ]
+        }
+      })
+      const before = readFileSync(installFile, 'utf8')
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      expect(await f.launch()).toEqual([original])
+      expect(f.env.ORCA_CLAUDE_PLUGIN_DIRS).toBeUndefined()
+      expect(f.env.ORCA_CLAUDE_RICH_OUTPUT).toBeUndefined()
+      expect(readFileSync(installFile, 'utf8')).toBe(before)
+      expect(warning.mock.calls.flat().join(' ')).toContain(
+        'Unrecognized Claude plugin install metadata'
+      )
+    }
+  )
+
   it.each([true, false])(
     'preserves a marketplace module when enabled=%s, including an entry alias',
     async (enabled) => {
