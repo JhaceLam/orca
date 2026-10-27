@@ -147,8 +147,8 @@ describe('measureRetargetDivergence with real Git', () => {
       HOME: home,
       USERPROFILE: home,
       XDG_CONFIG_HOME: home,
-      GIT_CONFIG_GLOBAL: emptyConfig,
-      GIT_CONFIG_SYSTEM: emptyConfig
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_SYSTEM: config
     }
 
     const fixture = await createRepo(inheritedEnv)

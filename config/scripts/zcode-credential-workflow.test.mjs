@@ -190,8 +190,8 @@ it('keeps fixture commits independent of host-required content filters', () => {
       HOME: home,
       USERPROFILE: home,
       XDG_CONFIG_HOME: home,
-      GIT_CONFIG_GLOBAL: emptyConfig,
-      GIT_CONFIG_SYSTEM: emptyConfig
+      GIT_CONFIG_GLOBAL: config,
+      GIT_CONFIG_SYSTEM: config
     })
     writeFileSync(join(directory, 'README.md'), 'fixture content')
     fixture.commit()
