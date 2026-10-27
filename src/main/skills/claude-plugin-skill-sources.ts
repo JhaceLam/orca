@@ -152,6 +152,28 @@ function safePluginLabel(pluginId: string, pathApi: SkillDiscoveryPathApi): stri
   return safeLabel || 'plugin'
 }
 
+export function resolveClaudePluginInstalls(args: {
+  installedPlugins: string | null
+  cwd: string
+  pathApi?: SkillDiscoveryPathApi
+}): { pluginId: string; installPath: string }[] {
+  const installed = parseJsonObject(args.installedPlugins)?.plugins
+  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
+    return []
+  }
+  const installs: { pluginId: string; installPath: string }[] = []
+  for (const [pluginId, values] of Object.entries(installed)) {
+    if (!Array.isArray(values)) {
+      continue
+    }
+    const install = selectActiveInstall(values, args.cwd, args.pathApi ?? defaultPathApi)
+    if (install) {
+      installs.push({ pluginId, installPath: install.installPath })
+    }
+  }
+  return installs
+}
+
 export function resolveClaudePluginSkillSources(args: {
   metadata: ClaudePluginMetadata
   cwd: string
@@ -183,43 +205,26 @@ export function resolveClaudePluginSkillSources(args: {
   return [...roots.values()]
 }
 
-export function resolveClaudePluginInstalls(args: {
-  installedPlugins: string | null
-  cwd: string
-  pathApi?: SkillDiscoveryPathApi
-}): { pluginId: string; installPath: string }[] {
-  const installed = parseJsonObject(args.installedPlugins)?.plugins
-  if (!installed || typeof installed !== 'object' || Array.isArray(installed)) {
-    return []
-  }
-  const installs: { pluginId: string; installPath: string }[] = []
-  for (const [pluginId, values] of Object.entries(installed)) {
-    if (!Array.isArray(values)) {
-      continue
-    }
-    const install = selectActiveInstall(values, args.cwd, args.pathApi ?? defaultPathApi)
-    if (install) {
-      installs.push({ pluginId, installPath: install.installPath })
-    }
-  }
-  return installs
-}
-
-async function readMetadataFile(pathValue: string): Promise<string | null> {
+async function readMetadataFile(pathValue: string, signal?: AbortSignal): Promise<string | null> {
   try {
+    signal?.throwIfAborted()
     const fileStat = await stat(pathValue)
+    signal?.throwIfAborted()
     if (!fileStat.isFile() || fileStat.size > MAX_PLUGIN_METADATA_BYTES) {
       return null
     }
     const file = await open(pathValue, 'r')
     try {
+      signal?.throwIfAborted()
       const buffer = Buffer.alloc(fileStat.size)
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+      signal?.throwIfAborted()
       return buffer.toString('utf8', 0, bytesRead)
     } finally {
       await file.close()
     }
   } catch {
+    signal?.throwIfAborted()
     return null
   }
 }
@@ -227,10 +232,11 @@ async function readMetadataFile(pathValue: string): Promise<string | null> {
 export async function discoverClaudePluginSkillSources(args: {
   homeDir: string
   cwd: string
+  signal?: AbortSignal
 }): Promise<SkillScanRoot[]> {
   const paths = getClaudePluginMetadataPaths(args.homeDir, args.cwd)
   const [installedPlugins, ...settings] = await Promise.all(
-    [paths.installedPlugins, ...paths.settings].map(readMetadataFile)
+    [paths.installedPlugins, ...paths.settings].map((path) => readMetadataFile(path, args.signal))
   )
   return resolveClaudePluginSkillSources({
     metadata: { installedPlugins, settings },
