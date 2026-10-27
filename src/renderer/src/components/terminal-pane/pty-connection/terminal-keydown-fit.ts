@@ -2,6 +2,7 @@ import { isRemoteRuntimePtyId } from '../../../../../shared/remote-runtime/remot
 import { makePaneKey } from '../../../../../shared/stable-pane-id'
 import { useAppStore } from '@/store'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
+import { setTerminalKittyReplayScope } from '@/lib/pane-manager/terminal-kitty-replay-cache'
 import { bindPanePtyId, getFitOverrideForPty } from '@/lib/pane-manager/mobile-fit-overrides'
 import {
   confirmRuntimeTerminalForegroundProcess,
@@ -79,6 +80,7 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
   session.setPanePtyFitBinding = (ptyId: string): void => {
     bindPanePtyId(session.pane.id, ptyId, session.deps.tabId)
     session.pane.container.dataset.ptyId = ptyId
+    setTerminalKittyReplayScope(session.pane.terminal, JSON.stringify([ptyId, session.pane.leafId]))
     if (
       session.deps.isVisibleRef.current &&
       isRemoteRuntimePtyId(ptyId) &&
@@ -158,6 +160,7 @@ export function installTerminalKeydownFit(session: ConnectPanePtySession): void 
     session.pendingVisibleRemoteViewportClaim = false
     session.activePanePtyBinding = null
     session.activePanePtyBindingBoundAt = null
+    setTerminalKittyReplayScope(session.pane.terminal, null)
     delete session.pane.container.dataset.ptyId
     delete session.pane.container.dataset.ptyRecoveryState
   }
