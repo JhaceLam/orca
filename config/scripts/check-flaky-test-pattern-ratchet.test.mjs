@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runProcessSync } from '@orca/process-host'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   changedFileScope,
@@ -38,6 +39,42 @@ describe('changedFileScope', () => {
     expect(inScope('test-no-wall-clock:src/a.test.ts')).toBe(true)
     expect(inScope('test-no-wall-clock:src/b.test.ts')).toBe(false)
     expect(changedFileScope(null)).toBeUndefined()
+  })
+})
+
+describe('listChangedFiles', () => {
+  let fixture
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    rmSync(fixture, { recursive: true, force: true })
+  })
+
+  it('scopes to the base check:changed forwards instead of a stale origin/main', () => {
+    fixture = mkdtempSync(join(tmpdir(), 'flaky-ratchet-base-'))
+    const git = (...args) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], {
+        cwd: fixture,
+        encoding: 'utf8'
+      }).trim()
+    const commit = (file) => {
+      writeFileSync(join(fixture, file), file)
+      git('add', file)
+      git('-c', 'commit.gpgsign=false', 'commit', '-qm', file)
+      return git('rev-parse', 'HEAD')
+    }
+    git('init', '-q')
+    git('update-ref', 'refs/remotes/origin/main', commit('fork-base.txt'))
+    const upstream = commit('upstream-drift.txt')
+    commit('contribution.txt')
+    vi.stubEnv('ORCA_FLAKY_TEST_RATCHET_ALL', '')
+    vi.stubEnv('ORCA_CODE_QUALITY_BASE', '')
+
+    expect([...listChangedFiles(fixture)].sort()).toEqual([
+      'contribution.txt',
+      'upstream-drift.txt'
+    ])
+    vi.stubEnv('ORCA_CODE_QUALITY_BASE', upstream)
+    expect([...listChangedFiles(fixture)]).toEqual(['contribution.txt'])
   })
 })
 
