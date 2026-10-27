@@ -1,5 +1,7 @@
-import { globSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
+import { runProcessSync } from '@orca/process-host'
 import ts from 'typescript-api'
 import { expect, it } from 'vitest'
 import { discoverUnitFiles } from './ci-unit-files.mjs'
@@ -57,4 +59,37 @@ it('keeps exposed-GC heap measurements in the Node runtime project', () => {
     }
   }
   expect(missing).toEqual([])
+})
+
+it('collects the indirect native PTY shell fixture exactly once in the Node project', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'orca-runtime-list-'))
+  try {
+    const output = join(directory, 'files.json')
+    const result = runProcessSync({
+      program: process.execPath,
+      args: [
+        'config/scripts/run-vitest.mjs',
+        'list',
+        '--config',
+        'config/vitest.config.ts',
+        'src/main/daemon/repro-13767-shell-ready-marker-lost-to-exec.test.ts',
+        '--filesOnly',
+        `--json=${output}`
+      ],
+      cwd: process.cwd(),
+      timeoutMs: 20_000
+    })
+    expect(result.code, result.stderr).toBe(0)
+    const collected: unknown = JSON.parse(readFileSync(output, 'utf8'))
+    expect(collected).toEqual([
+      expect.objectContaining({
+        file: expect.stringMatching(
+          /[/\\]src[/\\]main[/\\]daemon[/\\]repro-13767-shell-ready-marker-lost-to-exec\.test\.ts$/
+        ),
+        projectName: 'node-runtime'
+      })
+    ])
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

@@ -3,6 +3,10 @@ import { findSqliteRuntimeTests } from './vitest-sqlite-runtime-scan.mjs'
 // SQLite publication, native bindings, worker IPC, socket liveness, and V8 retention use Node.
 const NODE_RUNTIME_INCLUDE = [
   'src/main/runtime/structured-agent-cli-writers.test.ts',
+  // Native PTY callbacks and host filesystem/event-loop budgets use Node's implementation.
+  'src/main/shell-startup-feature-channel.test.ts',
+  'src/main/codex/codex-session-index-heal-state.test.ts',
+  'src/main/runtime/terminal/recovery/replaced-pane-handle-recovery.test.ts',
   'config/scripts/vitest-sqlite-runtime-boundary.test.ts',
   'config/scripts/cloud-security-history-workflow.test.mjs',
   'config/scripts/skill-recipe-shell.test.mjs',
@@ -45,6 +49,9 @@ const NODE_RUNTIME_INCLUDE = [
   'src/main/runtime/worker-terminal-wrap-provenance.test.ts',
   'tests/e2e/cross-version-wire/agent-session-clear-old-client.unit.test.ts',
   'tests/e2e/cross-version-wire/agent-session-clear-old-tab-mirror.unit.test.ts',
+  // Released host modules import native dependencies outside this checkout's static scan.
+  'tests/e2e/cross-version-wire/reported-lossy-initial-snapshot.unit.test.ts',
+  'tests/e2e/cross-version-wire/agent-session-resume-marker-downgrade.unit.test.ts',
   'tests/e2e/cross-version-wire/host-model-catalog-released-phone.unit.test.ts',
   'src/main/acp/acp-structured-host-live-listing.test.ts',
   'src/main/acp/acp-structured-host-configured-default.test.ts',
@@ -93,6 +100,8 @@ const NODE_RUNTIME_INCLUDE = [
   'src/main/automations/automation-worker-durability.test.ts',
   'src/**/*.node-pty.test.ts',
   'src/**/node-pty-*.test.ts',
+  // The shell-readiness repro reaches native PTY callbacks through createPtySubprocess.
+  'src/main/daemon/repro-13767-shell-ready-marker-lost-to-exec.test.ts',
   'src/**/*.live-shell.test.ts',
   'src/**/*real-pty*.test.ts',
   'src/**/*-native.test.ts',

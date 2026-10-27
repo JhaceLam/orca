@@ -54,7 +54,11 @@ export function listChangedFiles(root = process.cwd()) {
   }
   let base
   try {
-    const mergeBase = git(root, ['merge-base', 'HEAD', 'origin/main']).trim()
+    const mergeBase = git(root, [
+      'merge-base',
+      'HEAD',
+      process.env.ORCA_CODE_QUALITY_BASE || 'origin/main'
+    ]).trim()
     base = resolvePullRequestDiffBase(root, mergeBase)
   } catch {
     try {

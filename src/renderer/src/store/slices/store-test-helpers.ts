@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { afterEach, vi } from 'vitest'
 import type { AppState } from '../types'
 import type { Worktree } from '../../../../shared/worktree/types'
 import { createRepoSlice } from './repos'
@@ -63,6 +64,8 @@ export {
   makeUnifiedTab,
   makeTabGroup
 } from './store-session-test-harness'
+
+afterEach(() => vi.dynamicImportSettled())
 
 export function createTestStore() {
   // Why the record middleware: views of one file share a record only through it, as in the app.
