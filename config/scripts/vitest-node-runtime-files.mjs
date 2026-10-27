@@ -7,6 +7,8 @@ const NODE_RUNTIME_INCLUDE = [
   'src/main/shell-startup-feature-channel.test.ts',
   'src/main/codex/codex-session-index-heal-state.test.ts',
   'src/main/runtime/terminal/recovery/replaced-pane-handle-recovery.test.ts',
+  // The complete renderer sender census keeps Node's synchronous filesystem budget.
+  'src/renderer/src/runtime/layout-apply-paired-server-guard.test.ts',
   // Preserve exact Node filesystem inode, mode, and timestamp observations.
   'src/main/hermes/hermes-config-preservation.test.ts',
   'config/scripts/vitest-sqlite-runtime-boundary.test.ts',

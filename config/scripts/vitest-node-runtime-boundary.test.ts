@@ -77,6 +77,28 @@ it.each([
     fixture: 'Hermes filesystem preservation fixture',
     file: 'src/main/hermes/hermes-config-preservation.test.ts',
     pattern: /[/\\]src[/\\]main[/\\]hermes[/\\]hermes-config-preservation\.test\.ts$/
+  },
+  {
+    fixture: 'native session-search ownership fixture',
+    file: 'src/main/ai-vault-search/session-search-current-owner.test.ts',
+    pattern: /[/\\]src[/\\]main[/\\]ai-vault-search[/\\]session-search-current-owner\.test\.ts$/
+  },
+  {
+    fixture: 'native session-search device dispatch fixture',
+    file: 'src/main/runtime/runtime-rpc-device-key-dispatch.test.ts',
+    pattern: /[/\\]src[/\\]main[/\\]runtime[/\\]runtime-rpc-device-key-dispatch\.test\.ts$/
+  },
+  {
+    fixture: 'native session-search relay fixture',
+    file: 'src/main/runtime/mobile-cloud-relay/mobile-relay-e2ee.integration.test.ts',
+    pattern:
+      /[/\\]src[/\\]main[/\\]runtime[/\\]mobile-cloud-relay[/\\]mobile-relay-e2ee\.integration\.test\.ts$/
+  },
+  {
+    fixture: 'renderer sender census filesystem fixture',
+    file: 'src/renderer/src/runtime/layout-apply-paired-server-guard.test.ts',
+    pattern:
+      /[/\\]src[/\\]renderer[/\\]src[/\\]runtime[/\\]layout-apply-paired-server-guard\.test\.ts$/
   }
 ])('collects $fixture exactly once in the Node project', ({ file, pattern }) => {
   const directory = mkdtempSync(join(tmpdir(), 'orca-runtime-list-'))
