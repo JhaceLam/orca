@@ -20,12 +20,12 @@ const SQLITE_HARNESSES = new Set([
   'structured-agent-session-rest-test-rig',
   'journal-host-database-test-support',
   'terminal-topology-profile-fixture',
-  'acknowledged-terminal-tab-retirement-fixture',
-  'session-search-engine-test-fixture'
+  'acknowledged-terminal-tab-retirement-fixture'
 ])
+SQLITE_HARNESSES.add('session-search-indexer-test-fixture')
+SQLITE_HARNESSES.add('session-search-engine-test-fixture')
 export const SQLITE_MODULES = [
   'src/main/sqlite/sync-database',
-  'src/main/persistence/profile-state/profile-state-database',
   'src/main/persistence/profile-state/profile-state-sqlite-authority',
   'src/main/native-chat/agent-session-journal/journal-host-database',
   'src/main/runtime/orchestration/db',
@@ -33,6 +33,9 @@ export const SQLITE_MODULES = [
   'src/main/runtime/structured-agent-session-runtime',
   'src/main/runtime/agent-session-record-store-slot'
 ]
+if (!SQLITE_MODULES.includes('src/main/persistence/profile-state/profile-state-database')) {
+  SQLITE_MODULES.push('src/main/persistence/profile-state/profile-state-database')
+}
 const SQLITE_MODULE_PATHS = new Set(SQLITE_MODULES.map((module) => resolve(root, module)))
 // A cheap superset of the parse below; a bare 'db' would match nearly every file.
 const SQLITE_MODULE_NAMES = [

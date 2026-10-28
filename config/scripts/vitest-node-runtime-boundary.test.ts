@@ -6,6 +6,7 @@ import ts from 'typescript-api'
 import { expect, it } from 'vitest'
 import { discoverUnitFiles } from './ci-unit-files.mjs'
 import { getNodeRuntimeInclude } from './vitest-node-runtime-files.mjs'
+import { importsSqliteRuntime } from './vitest-sqlite-runtime-scan.mjs'
 
 it('runs Node runtime contracts in Node even when the coordinator uses Bun', () => {
   expect(process.versions.bun).toBeUndefined()
@@ -136,4 +137,12 @@ it.each([
   } finally {
     rmSync(directory, { recursive: true, force: true })
   }
+})
+
+it.each([
+  'src/main/ai-vault-search/session-search-index-pass.test.ts',
+  'src/main/ai-vault-search/session-search-engine.test.ts',
+  'src/main/persistence/profile-state/profile-state-store-factory.test.ts'
+])('keeps upstream and local SQLite consumers on Node: %s', (file) => {
+  expect(importsSqliteRuntime(file, readFileSync(file, 'utf8'))).toBe(true)
 })
