@@ -1,3 +1,5 @@
+import { FENCE, FORMULA } from './blocks.ts'
+
 // Claude's terminal Markdown leaf supports emphasis but not GFM deletion.
 // Only prose containing a deletion uses this inline tree. Code and math
 // blocks continue through their existing, literal/block renderers.
@@ -104,3 +106,51 @@ export function inline(text: string, depth = 0): Inline[] {
 
 export const hasStrike = (parts: Inline[]): boolean =>
   parts.some((part) => 'mark' in part && (part.mark === 'strike' || hasStrike(part.children)))
+
+// CommonMark closes a `**` only where punctuation inside it does not meet a
+// letter outside, and Chinese sets no space after its stops: `**收斂。**記憶`
+// is drawn as written. Moving the punctuation out (`**收斂**。記憶`) draws it
+// bold. A code span is matched first and kept whole, inside bold or not.
+// ponytail: one line at a time, single-backtick code spans inside bold; a
+// bold run across a line break, and `***bold italic***`, are left as written.
+const BOLD =
+  /(`+)[^`\n]*?\1(?!`)|\*\*((?:(?!\*)\p{P})*)((?:`[^`\n]*`|[^*`\n])*?)((?:(?!\*)\p{P})*)\*\*/gu
+const ENDS_IN_LETTER = /[^\s\p{P}\p{S}]$/u
+const STARTS_WITH_LETTER = /^[^\s\p{P}\p{S}]/u
+
+/** The text with each bold run closable, its fences and `$$` formulas left as written. */
+export function holdBold(text: string) {
+  let fence: string | undefined
+
+  return text
+    .split('\n')
+    .map((line) => {
+      const run = FENCE.exec(line)?.[1] ?? (FORMULA.test(line) ? '$$' : undefined)
+      if (fence !== undefined) {
+        if (
+          run !== undefined &&
+          run[0] === fence[0] &&
+          run.length >= fence.length &&
+          line.trim() === run
+        ) {
+          fence = undefined
+        }
+
+        return line
+      }
+      fence = run
+
+      return run !== undefined
+        ? line
+        : line.replace(BOLD, (whole, ticks?: string, lead = '', body = '', trail = '', at = 0) => {
+            const isStuck =
+              (lead !== '' && ENDS_IN_LETTER.test(line.slice(0, at))) ||
+              (trail !== '' && STARTS_WITH_LETTER.test(line.slice(at + whole.length)))
+
+            return ticks !== undefined || !isStuck || body === '' || body.trim() !== body
+              ? whole
+              : `${lead}**${body}**${trail}`
+          })
+    })
+    .join('\n')
+}

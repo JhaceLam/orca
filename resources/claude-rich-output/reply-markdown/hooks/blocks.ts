@@ -135,6 +135,8 @@ export function parse(text: string): Block[] {
             hasGapAbove: hasGapAboveRaw
           })
           raw = []
+        } else {
+          flush()
         }
         fence = undefined
       }
