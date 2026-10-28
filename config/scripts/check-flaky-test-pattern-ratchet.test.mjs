@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runProcessSync } from '@orca/process-host'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   changedFileScope,
@@ -45,6 +45,23 @@ describe('changedFileScope', () => {
 
 describe('listChangedFiles', () => {
   let fixture
+  let home
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), 'flaky-ratchet-home-'))
+    const config = join(home, 'empty.gitconfig')
+    writeFileSync(config, '')
+    for (const key of Object.keys(process.env).filter((key) =>
+      key.toUpperCase().startsWith('GIT_')
+    )) {
+      vi.stubEnv(key, undefined)
+    }
+    vi.stubEnv('HOME', home)
+    vi.stubEnv('USERPROFILE', home)
+    vi.stubEnv('XDG_CONFIG_HOME', home)
+    vi.stubEnv('GIT_CONFIG_GLOBAL', config)
+    vi.stubEnv('GIT_CONFIG_SYSTEM', config)
+    vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
+  })
   const git = (...args) =>
     execFileSync(
       'git',
@@ -63,6 +80,7 @@ describe('listChangedFiles', () => {
     vi.unstubAllEnvs()
     vi.restoreAllMocks()
     rmSync(fixture, { recursive: true, force: true })
+    rmSync(home, { recursive: true, force: true })
   })
 
   it('enforces findings in tracked files whose names Git quotes', () => {
