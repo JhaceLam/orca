@@ -12,9 +12,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { runProcess, spawnProcess } from '@orca/process-host'
+import { forceTerminateProcessTree } from '@orca/process-host/process-tree-termination'
 import { RELAY_INSTALL_LOCK_NAME } from '../../../shared/relay-install-lock-name'
 import { ORCAD_ACTIVATION_TRANSACTION_DIRNAME } from '../activation/orcad-activation-transaction'
 import { serializedStateMutationCommand } from './orcad-state-snapshot'
+import { posixProcessGroupCommand } from './orcad-state-mutation-owner-record'
 import { ORCAD_FENCE_OWNER_FILENAME } from '../activation/orcad-activation-fence-scope'
 import { tryStealInstallLockCommand } from '../install/remote-install-lock-commands'
 import { getRemoteHostPlatform } from '../../ssh/ssh-remote-platform'
@@ -28,14 +30,34 @@ async function sh(command: string): Promise<string> {
   return (await runProcess({ program: '/bin/sh', args: ['-c', command] })).stdout.trim()
 }
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+const isLive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+      return false
+    }
+    throw error
+  }
+}
 
 describe.skipIf(process.platform === 'win32')(
   'the fence heartbeat of a running state mutation',
   () => {
     let base = ''
     let fence = ''
+    let ownGroup = 0
+    const runs: {
+      run: ReturnType<typeof spawnProcess>
+      group: number
+      closed: boolean
+      close: Promise<void>
+    }[] = []
 
     beforeEach(async () => {
+      ownGroup = Number(await sh(posixProcessGroupCommand(String(process.pid))))
+      expect(ownGroup).toBeGreaterThan(1)
       base = mkdtempSync(join(tmpdir(), 'orcad-fence-beat-'))
       fence = join(base, ORCAD_ACTIVATION_TRANSACTION_DIRNAME, RELAY_INSTALL_LOCK_NAME)
       mkdirSync(fence, { recursive: true })
@@ -49,14 +71,34 @@ describe.skipIf(process.platform === 'win32')(
     const startMutation = (script: string, beforeStart = '') => {
       const run = spawnProcess({
         program: '/bin/sh',
+        detached: true,
         args: ['-c', beforeStart + mutation(`printf 'ORCA_MUTATION_STARTED\\n' >&2; ${script}`)]
       })
+      const tracked: (typeof runs)[number] = {
+        run,
+        group: 0,
+        closed: false,
+        close: new Promise<void>((resolve) => {
+          run.once('close', () => {
+            tracked.closed = true
+            resolve()
+          })
+        })
+      }
+      runs.push(tracked)
       const started = new Promise<void>((resolve, reject) => {
         let stderr = ''
         run.stderr?.on('data', (chunk: Buffer | string) => {
           stderr += chunk.toString()
-          if (stderr.includes('ORCA_MUTATION_STARTED\n')) {
-            resolve()
+          if (!tracked.group && stderr.includes('ORCA_MUTATION_STARTED\n')) {
+            try {
+              tracked.group = Number(
+                readFileSync(join(base, 'orcad-state-mutation.lock', 'pgid'), 'utf8').trim()
+              )
+              resolve()
+            } catch (error) {
+              reject(error)
+            }
           }
         })
         run.once('error', reject)
@@ -66,7 +108,41 @@ describe.skipIf(process.platform === 'win32')(
       })
       return { run, started }
     }
-    afterEach(() => {
+    const stopMutations = async (): Promise<void> => {
+      const results = await Promise.allSettled(
+        runs.splice(0).map(async (tracked) => {
+          try {
+            const groupFile = join(base, 'orcad-state-mutation.lock', 'pgid')
+            if (!tracked.group && existsSync(groupFile)) {
+              tracked.group = Number(readFileSync(groupFile, 'utf8').trim())
+            }
+            if (tracked.group > 1) {
+              expect(tracked.group).not.toBe(ownGroup)
+              try {
+                process.kill(-tracked.group, 'SIGKILL')
+              } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
+                  throw error
+                }
+              }
+              await expect.poll(() => isLive(-tracked.group), { timeout: 5_000 }).toBe(false)
+            }
+          } finally {
+            const stopped = await forceTerminateProcessTree(tracked.run)
+            await expect.poll(() => tracked.closed, { timeout: 5_000 }).toBe(true)
+            await tracked.close
+            expect(stopped).toBe(true)
+          }
+        })
+      )
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          throw result.reason
+        }
+      }
+    }
+    afterEach(async () => {
+      await stopMutations()
       rmSync(base, { recursive: true, force: true })
     })
 
@@ -163,6 +239,29 @@ describe.skipIf(process.platform === 'win32')(
       rmSync(fence, { recursive: true })
       await sh(serializedStateMutationCommand(base, ':', HEARTBEAT_SECONDS, null))
       expect(existsSync(fence)).toBe(false)
+    }, 20_000)
+
+    // Real process-group termination and close need this process deadline.
+    it('joins an orphaned mutation group before removing its fixture', async () => {
+      const { run, started } = startMutation('sleep 30')
+      let closed = false
+      run.once('close', () => {
+        closed = true
+      })
+      await started
+      const group = Number(
+        readFileSync(join(base, 'orcad-state-mutation.lock', 'pgid'), 'utf8').trim()
+      )
+      expect(group).toBeGreaterThan(1)
+      expect(group).not.toBe(ownGroup)
+      run.kill('SIGKILL')
+      await expect.poll(() => run.signalCode).toBe('SIGKILL')
+      expect(isLive(-group)).toBe(true)
+
+      await stopMutations()
+      expect(isLive(-group)).toBe(false)
+      expect(closed).toBe(true)
+      expect(existsSync(base)).toBe(true)
     }, 20_000)
   }
 )
