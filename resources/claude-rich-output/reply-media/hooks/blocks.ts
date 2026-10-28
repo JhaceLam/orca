@@ -85,12 +85,12 @@ export function splitBlocks(text: string): string[] {
       while (
         end < lines.length &&
         !(opening === undefined
-          ? FORMULA.test(lines[end] ?? '')
+          ? FORMULA.test(lines[end] ?? '') || FENCE.test(lines[end] ?? '')
           : closesFence(lines[end] ?? '', opening))
       ) {
         end++
       }
-      if (end === lines.length) {
+      if (end === lines.length || (opening === undefined && !FORMULA.test(lines[end] ?? ''))) {
         if (opening !== undefined) {
           break
         }

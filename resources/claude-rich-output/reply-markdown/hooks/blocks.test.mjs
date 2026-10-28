@@ -19,3 +19,14 @@ test('a long incomplete fence stays raw even with a shorter closing run', () => 
     { kind: 'raw', text, hasGapAbove: false }
   ])
 })
+
+for (const fence of ['```', '````', '~~~']) {
+  test(`a dollar line does not close inside a ${fence} code example`, () => {
+    const source = '$$\nx\n$$'
+    assert.deepEqual(parse(`Before\n\n$$\n\n${fence}latex\n${source}\n${fence}\n\n## After`), [
+      { kind: 'raw', text: 'Before\n\n$$', hasGapAbove: false },
+      { kind: 'code', language: 'latex', source, hasGapAbove: true },
+      { kind: 'heading', level: 2, text: 'After', hasGapAbove: true }
+    ])
+  })
+}

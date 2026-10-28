@@ -161,3 +161,41 @@ test('an unclosed code fence still shields later formula and image syntax', asyn
     await ui.unmount()
   }
 })
+
+for (const fence of ['```', '````', '~~~']) {
+  test(`an unmatched dollar line leaves a ${fence} example literal and renders all later media`, async ($, on) => {
+    const { clock, converted, drawn } = mediaScenario(on)
+    const example = `${fence}latex\n$$\nexample-formula\n$$\n${fence}`
+    const diagram = 'flowchart LR\nA --> B'
+    const text = `Before\n\n$$\n\n${example}\n\n\`\`\`mermaid\n${diagram}\n\`\`\`\n\n\`\`\`math\nx^2\n\`\`\`\n\n![kept](kept.png)\n\nAfter`
+    const stored = await $.session.append({
+      door: 'response',
+      origin: { kind: 'model', model: 'test' },
+      uuid: `unmatched-dollar-code-example-${fence}`,
+      message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+    })
+    await clock.settle()
+    expect(stored.message?.content?.[0]?.text).toBe(text)
+    expect(converted).toEqual([
+      ['render.mjs', diagram],
+      ['math.mjs', 'x^2'],
+      ['picture.mjs', 'kept.png']
+    ])
+    const ui = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    try {
+      expect((await ui.findAll({ type: 'Image' })).map((image) => image.props.alt)).toEqual([
+        diagram,
+        'x^2',
+        'kept.png'
+      ])
+      expect(drawn).toEqual([`Before\n\n$$\n\n${example}`, 'After'])
+    } finally {
+      await ui.unmount()
+    }
+  })
+}

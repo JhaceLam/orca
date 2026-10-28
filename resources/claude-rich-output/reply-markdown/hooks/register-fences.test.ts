@@ -70,3 +70,36 @@ test(
     }
   }
 )
+
+for (const fence of ['```', '````', '~~~']) {
+  test(`an unmatched dollar line preserves a ${fence} code card and later styled prose`, async ($, on) => {
+    const source = '$$\n\\text{~~literal~~}\n$$'
+    const drawn: string[] = []
+    on('settings.read', () => ({ value: {} }))
+    on('ui.render', { component: 'AssistantMessage' }, (_, e) => {
+      drawn.push(e.props.text)
+      return { type: 'engine', ref: 0 }
+    })
+    const ui = await $.ui.mount({
+      plugin: 'reply-markdown',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: {
+        text: `~~before~~\n\n$$\n\n${fence}latex\n${source}\n${fence}\n\n~~after~~`,
+        isFirstOfReply: true
+      }
+    })
+    try {
+      expect((await ui.find({ type: 'Code' }))?.props.source).toBe(source)
+      expect(drawn).toEqual(['~~before~~\n\n$$'])
+      expect(
+        (await ui.findAll({ type: 'Text', text: /^after$/ })).some(
+          (node) => node.props.strikethrough === true
+        )
+      ).toBe(true)
+      expect(await ui.find({ type: 'Text', text: /^literal$/ })).toBeUndefined()
+    } finally {
+      await ui.unmount()
+    }
+  })
+}

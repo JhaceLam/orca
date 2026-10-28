@@ -104,7 +104,6 @@ export function parse(text: string): Block[] {
   }
 
   const lines = text.split('\n')
-  const lastFormulaIndex = lines.findLastIndex((line) => FORMULA.test(line))
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? ''
@@ -114,6 +113,19 @@ export function parse(text: string): Block[] {
     const item = ITEM.exec(line)
     const quote = QUOTE.exec(line)
     const last = blocks.at(-1)
+    let opensFormula = false
+    if (fence === undefined && FORMULA.test(line)) {
+      for (let next = index + 1; next < lines.length; next++) {
+        const candidate = lines[next] ?? ''
+        if (FENCE.test(candidate)) {
+          break
+        }
+        if (FORMULA.test(candidate)) {
+          opensFormula = true
+          break
+        }
+      }
+    }
 
     if (fence !== undefined) {
       keep(line)
@@ -141,7 +153,7 @@ export function parse(text: string): Block[] {
         }
         fence = undefined
       }
-    } else if (FENCE.test(line) || (FORMULA.test(line) && index < lastFormulaIndex)) {
+    } else if (FENCE.test(line) || opensFormula) {
       flush()
       keep(line)
       fence = FENCE.exec(line)?.[1] ?? '$$'
