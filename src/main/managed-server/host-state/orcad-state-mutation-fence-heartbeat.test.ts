@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { runProcess, spawnProcess } from '@orca/process-host'
+import { runProcess, runProcessSync, spawnProcess } from '@orca/process-host'
 import { forceTerminateProcessTree } from '@orca/process-host/process-tree-termination'
 import { RELAY_INSTALL_LOCK_NAME } from '../../../shared/relay-install-lock-name'
 import { ORCAD_ACTIVATION_TRANSACTION_DIRNAME } from '../activation/orcad-activation-transaction'
@@ -30,16 +30,27 @@ async function sh(command: string): Promise<string> {
   return (await runProcess({ program: '/bin/sh', args: ['-c', command] })).stdout.trim()
 }
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
-const isLive = (pid: number): boolean => {
+const groupExists = (group: number): boolean => {
   try {
-    process.kill(pid, 0)
+    process.kill(-group, 0)
     return true
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-      return false
-    }
-    throw error
+    return !(error instanceof Error && 'code' in error && error.code === 'ESRCH')
   }
+}
+const groupHasWork = (group: number): boolean => {
+  const result = runProcessSync({
+    program: 'ps',
+    args: ['-axo', 'pgid=,state='],
+    timeoutMs: 2_000
+  })
+  if (result.code !== 0) {
+    return groupExists(group)
+  }
+  return result.stdout.split('\n').some((line) => {
+    const match = line.trim().match(/^(\d+)\s+(\S+)/)
+    return match !== null && Number(match[1]) === group && !match[2]!.startsWith('Z')
+  })
 }
 
 describe.skipIf(process.platform === 'win32')(
@@ -118,20 +129,24 @@ describe.skipIf(process.platform === 'win32')(
             }
             if (tracked.group > 1) {
               expect(tracked.group).not.toBe(ownGroup)
-              try {
-                process.kill(-tracked.group, 'SIGKILL')
-              } catch (error) {
-                if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
-                  throw error
+              if (groupHasWork(tracked.group)) {
+                try {
+                  process.kill(-tracked.group, 'SIGKILL')
+                } catch (error) {
+                  if (groupHasWork(tracked.group)) {
+                    throw error
+                  }
                 }
               }
-              await expect.poll(() => isLive(-tracked.group), { timeout: 5_000 }).toBe(false)
+              await expect.poll(() => groupHasWork(tracked.group), { timeout: 5_000 }).toBe(false)
             }
           } finally {
-            const stopped = await forceTerminateProcessTree(tracked.run)
+            await forceTerminateProcessTree(tracked.run)
             await expect.poll(() => tracked.closed, { timeout: 5_000 }).toBe(true)
             await tracked.close
-            expect(stopped).toBe(true)
+            if (tracked.run.pid) {
+              expect(groupHasWork(tracked.run.pid)).toBe(false)
+            }
           }
         })
       )
@@ -256,12 +271,52 @@ describe.skipIf(process.platform === 'win32')(
       expect(group).not.toBe(ownGroup)
       run.kill('SIGKILL')
       await expect.poll(() => run.signalCode).toBe('SIGKILL')
-      expect(isLive(-group)).toBe(true)
+      expect(groupHasWork(group)).toBe(true)
 
       await stopMutations()
-      expect(isLive(-group)).toBe(false)
+      expect(groupHasWork(group)).toBe(false)
       expect(closed).toBe(true)
       expect(existsSync(base)).toBe(true)
+    }, 20_000)
+
+    // Real zombie observation and child close need this process deadline.
+    it('does not count an unreaped zombie group as mutation work', async () => {
+      const child = spawnProcess({
+        program: '/bin/sh',
+        args: ['-c', 'exit 0'],
+        detached: true,
+        stdio: 'ignore'
+      })
+      let closed = false
+      child.once('close', () => {
+        closed = true
+      })
+      if (!child.pid) {
+        throw new Error('No owned child PID')
+      }
+      const group = child.pid
+      try {
+        const probe = runProcessSync({
+          program: '/bin/sh',
+          args: [
+            '-c',
+            `attempt=0; while [ "$attempt" -lt 100 ]; do ` +
+              `case "$(ps -o stat= -p ${group} 2>/dev/null)" in *Z*) exit 0;; esac; ` +
+              'attempt=$((attempt + 1)); sleep 0.01; done; exit 1'
+          ],
+          timeoutMs: 3_000
+        })
+        expect(probe.code).toBe(0)
+        const state = runProcessSync({
+          program: 'ps',
+          args: ['-o', 'pgid=,stat=', '-p', String(group)]
+        }).stdout.trim()
+        expect(state).toMatch(/\bZ/)
+        expect(groupHasWork(group)).toBe(false)
+      } finally {
+        await forceTerminateProcessTree(child)
+        await expect.poll(() => closed, { timeout: 5_000 }).toBe(true)
+      }
     }, 20_000)
   }
 )
