@@ -7,6 +7,7 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 // Extraction takes at most two minutes; a bounded clip plays for at most ten.
 const ACTIVE_MS = 15 * 60 * 1000
 const ENTRY = /^[a-f0-9]{40}(?:\.png)?$/
+const TEMPORARY = /^[a-f0-9]{40}\.png\.\d+\.(?:[0-9a-f-]{36}\.png|tmp)$/
 
 function entryBytes(path, stat) {
   if (stat.isFile()) {
@@ -81,17 +82,26 @@ export function pruneMediaCache(directory, keep) {
         }
         return []
       }
-      if (!ENTRY.test(name)) {
+      const temporary = TEMPORARY.test(name)
+      if (!ENTRY.test(name) && !temporary) {
         return []
       }
       const path = join(directory, name)
       try {
         const stat = lstatSync(path)
-        if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+        if (
+          stat.isSymbolicLink() ||
+          (temporary ? !stat.isFile() : !stat.isFile() && !stat.isDirectory())
+        ) {
           return []
         }
         return [
-          { path, bytes: entryBytes(path, stat), used: path === keep ? now : lastUsed(path, stat) }
+          {
+            path,
+            bytes: entryBytes(path, stat),
+            used: path === keep ? now : lastUsed(path, stat),
+            temporary
+          }
         ]
       } catch {
         // Another renderer may be publishing or removing this entry.
@@ -106,7 +116,7 @@ export function pruneMediaCache(directory, keep) {
     if (entry.path === keep || now - entry.used < ACTIVE_MS) {
       continue
     }
-    if (now - entry.used <= MAX_AGE_MS && bytes <= MAX_BYTES) {
+    if (!entry.temporary && now - entry.used <= MAX_AGE_MS && bytes <= MAX_BYTES) {
       continue
     }
     try {

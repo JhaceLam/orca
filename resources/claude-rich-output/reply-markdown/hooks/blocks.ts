@@ -28,6 +28,20 @@ const PICTURED = /^(mermaid|math)$/
 // A `$$` formula's first and last line, as the reply-media mod reads them: the
 // lines between are kept as text too, though one may look like a list item.
 export const FORMULA = /^\$\$[ \t]*$/
+
+export function closesFormula(lines: readonly string[], index: number) {
+  for (let next = index + 1; next < lines.length; next++) {
+    const line = lines[next] ?? ''
+    if (FENCE.test(line)) {
+      return false
+    }
+    if (FORMULA.test(line)) {
+      return true
+    }
+  }
+  return false
+}
+
 const RULE = /^ {0,3}([-*_])( *\1){2,} *$/
 const HEADING = /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
@@ -113,19 +127,7 @@ export function parse(text: string): Block[] {
     const item = ITEM.exec(line)
     const quote = QUOTE.exec(line)
     const last = blocks.at(-1)
-    let opensFormula = false
-    if (fence === undefined && FORMULA.test(line)) {
-      for (let next = index + 1; next < lines.length; next++) {
-        const candidate = lines[next] ?? ''
-        if (FENCE.test(candidate)) {
-          break
-        }
-        if (FORMULA.test(candidate)) {
-          opensFormula = true
-          break
-        }
-      }
-    }
+    const opensFormula = fence === undefined && FORMULA.test(line) && closesFormula(lines, index)
 
     if (fence !== undefined) {
       keep(line)

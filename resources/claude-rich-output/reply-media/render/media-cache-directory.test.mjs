@@ -207,3 +207,21 @@ test('keeps recently used previews during active overage and retries collection 
   maintain()
   assert.equal(existsSync(recent), false)
 })
+
+for (const suffix of ['123.tmp', '123.01234567-89ab-4cde-8fab-0123456789ab.png']) {
+  test(`collects an abandoned conversion ${suffix} while preserving active and unknown output`, (t) => {
+    const { directory, maintain } = cacheFor(t)
+    const old = join(directory, `${'a'.repeat(40)}.png.${suffix}`)
+    const active = join(directory, `${'b'.repeat(40)}.png.${suffix}`)
+    const unknown = join(directory, 'unrecognized-conversion.png')
+    writeFileSync(old, 'terminated conversion')
+    writeFileSync(active, 'still converting')
+    writeFileSync(unknown, 'not a generated output name')
+    const date = new Date(Date.now() - 60 * 60 * 1000)
+    utimesSync(old, date, date)
+    maintain()
+    assert.equal(existsSync(old), false)
+    assert.equal(readFileSync(active, 'utf8'), 'still converting')
+    assert.equal(readFileSync(unknown, 'utf8'), 'not a generated output name')
+  })
+}

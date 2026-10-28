@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { inline } from './inline.ts'
+import { inline, holdBold } from './inline.ts'
 
 const punctuation = Array.from({ length: 94 }, (_, index) =>
   String.fromCharCode(index + 33)
@@ -69,3 +69,23 @@ for (const count of [128, 512]) {
     )
   })
 }
+
+test('an unmatched dollar line leaves later CJK bold closable', () => {
+  assert.equal(holdBold('Before\n$$\n**收斂。**記憶'), 'Before\n$$\n**收斂**。記憶')
+})
+
+for (const fence of ['```', '````', '~~~']) {
+  test(`CJK bold after an unmatched dollar line preserves a ${fence} literal example`, () => {
+    const source = '**literal。**word\n$$'
+    const text = `$$\n**收斂。**記憶\n${fence}latex\n${source}\n${fence}\n**最後。**段落`
+    assert.equal(
+      holdBold(text),
+      `$$\n**收斂**。記憶\n${fence}latex\n${source}\n${fence}\n**最後**。段落`
+    )
+  })
+}
+
+test('a closed display formula stays literal while CJK prose after it is closable', () => {
+  const formula = '$$\n**literal。**word\n$$'
+  assert.equal(holdBold(`${formula}\n**最後。**段落`), `${formula}\n**最後**。段落`)
+})

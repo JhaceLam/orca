@@ -7,7 +7,15 @@
 // second prints {"dir","count","fps"}.
 import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash, randomUUID } from 'node:crypto'
-import { readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync
+} from 'node:fs'
 import { homedir } from 'node:os'
 import {
   mediaCacheDirectory,
@@ -15,7 +23,22 @@ import {
   pruneMediaCache
 } from './media-cache-directory.mjs'
 import { readPngCacheEntry } from './png-cache-entry.mjs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
+
+if (process.argv[2] === 'touch') {
+  const dir = readFileSync(0, 'utf8').trim()
+  const name = basename(dir)
+  if (!/^[a-f0-9]{40}$/.test(name)) {
+    throw new Error('Unsafe video frame cache')
+  }
+  const root = mediaCacheDirectory(name)
+  const stat = lstatSync(dir)
+  if (dirname(dir) !== root || !stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error('Unsafe video frame cache')
+  }
+  console.log(JSON.stringify({ dir }))
+  process.exit(0)
+}
 
 // shortcut: the whole clip is cut at its first play, into at most MAX_FRAMES
 // frames no wider than WIDTH px, so a long clip plays at a lower rate and one

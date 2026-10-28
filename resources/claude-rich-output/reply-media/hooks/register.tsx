@@ -1,4 +1,4 @@
-import { run, isGone, imageSource } from './render-process'
+import { isGone, imageSource, cachedFrames, cacheVideoFrames } from './render-process'
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
@@ -82,21 +82,14 @@ async function startVideo(
 
   // Cut at the first play, not when the reply arrives: it takes seconds and
   // disk, and most clips shown are never played.
-  const known =
-    diagram.frames !== undefined &&
-    !(await isGone($, frameFile(diagram.frames, 0))) &&
-    !(await isGone($, frameFile(diagram.frames, diagram.frames.count - 1)))
-      ? diagram.frames
-      : undefined
+  const known = await cachedFrames($, diagram.frames)
   if (request !== playRequest) {
     return
   }
   if (known === undefined) {
     $.ui.toast('Cutting the video into frames…')
   }
-  const frames =
-    known ??
-    (await run<Frames>($, ['video', 'frames'], { stdin: diagram.clip, timeoutMs: 120_000 }))
+  const frames = known ?? (await cacheVideoFrames($, diagram.clip))
   if (request !== playRequest) {
     return
   }

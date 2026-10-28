@@ -1,5 +1,7 @@
 import type { EngineInterface, ImageSource } from 'claude-code'
-import type { Failure } from '../types'
+import type { Failure, Frames } from '../types'
+
+let lastFrameUse: { dir: string; at: number } | undefined
 
 /**
  * Runs a renderer script, named with its arguments, and answers what it
@@ -44,6 +46,39 @@ export function isGone($: EngineInterface, file: string) {
     () => false,
     (error: unknown) => /ENOENT/.test(String(error))
   )
+}
+
+export async function cachedFrames($: EngineInterface, frames: Frames | undefined) {
+  if (
+    frames === undefined ||
+    (await isGone($, `${frames.dir}/f00001.png`)) ||
+    (await isGone($, `${frames.dir}/f${String(frames.count).padStart(5, '0')}.png`))
+  ) {
+    return undefined
+  }
+  const now = await $.clock.now()
+  // Leave more than the maximum ten-minute clip inside the fifteen-minute protection window.
+  if (lastFrameUse?.dir === frames.dir && now - lastFrameUse.at < 4 * 60 * 1000) {
+    return frames
+  }
+  const used = await run<Record<string, unknown>>($, ['video', 'touch'], {
+    stdin: frames.dir,
+    timeoutMs: 30_000
+  })
+  if ('error' in used) {
+    return undefined
+  }
+  lastFrameUse = { dir: frames.dir, at: now }
+  return frames
+}
+
+export async function cacheVideoFrames($: EngineInterface, clip: string) {
+  const at = await $.clock.now()
+  const frames = await run<Frames>($, ['video', 'frames'], { stdin: clip, timeoutMs: 120_000 })
+  if (!('error' in frames)) {
+    lastFrameUse = { dir: frames.dir, at }
+  }
+  return frames
 }
 
 /**

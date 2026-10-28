@@ -103,3 +103,30 @@ for (const fence of ['```', '````', '~~~']) {
     }
   })
 }
+
+for (const fence of ['```', '````', '~~~']) {
+  test(`unmatched dollars preserve native CJK bold around a ${fence} code card`, async ($, on) => {
+    const source = '**literal。**word\n$$'
+    const drawn: string[] = []
+    on('settings.read', () => ({ value: {} }))
+    on('ui.render', { component: 'AssistantMessage' }, (_, e) => {
+      drawn.push(e.props.text)
+      return { type: 'engine', ref: 0 }
+    })
+    const ui = await $.ui.mount({
+      plugin: 'reply-markdown',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: {
+        text: `$$\n**收斂。**記憶\n\n${fence}latex\n${source}\n${fence}\n\n**最後。**段落`,
+        isFirstOfReply: true
+      }
+    })
+    try {
+      expect((await ui.find({ type: 'Code' }))?.props.source).toBe(source)
+      expect(drawn).toEqual(['$$\n**收斂**。記憶', '**最後**。段落'])
+    } finally {
+      await ui.unmount()
+    }
+  })
+}

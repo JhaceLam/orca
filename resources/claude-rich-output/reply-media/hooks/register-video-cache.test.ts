@@ -243,3 +243,85 @@ for (const state of ['playing', 'preparing']) {
     })
   }
 }
+
+for (const action of ['play', 'cancel']) {
+  test(`cached video ${action} refreshes protection before collection and keeps cancellation final`, async ($, on) => {
+    const clock = mock.clock(on)
+    let cuts = 0
+    let refreshed = false
+    let touching = false
+    let swept = false
+    let blits = 0
+    on('session.cwd', () => ({ value: '/work' }))
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    on('ui.render', { component: 'AssistantMessage' }, () => ({ type: 'engine', ref: 0 }))
+    on('ui.toast', () => ({ value: undefined }))
+    on('fs.stat', () => ({ value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }))
+    on('fs.read', (_, e) =>
+      swept && e.path.startsWith(`${OLD}/`)
+        ? { deny: 'ENOENT: collector removed unprotected cached frames' }
+        : { value: { base64: PNG } }
+    )
+    on('ui.blit', () => {
+      blits++
+      return { value: {} }
+    })
+    on('process.run', async (_, e) => {
+      if (e.argv[2] === 'touch') {
+        touching = true
+        if (action === 'cancel') {
+          await clock.sleep(1_000)
+        }
+        refreshed = true
+        return { value: { ...RAN, stdout: JSON.stringify({ dir: OLD }) } }
+      }
+      if (e.argv[2] === 'frames') {
+        cuts++
+        return { value: { ...RAN, stdout: JSON.stringify({ dir: OLD, count: 3, fps: 10 }) } }
+      }
+      return {
+        value: {
+          ...RAN,
+          stdout: JSON.stringify({ file: POSTER, width: 100, height: 40, clip: '/work/clip.mp4' })
+        }
+      }
+    })
+    await $.session.append({
+      door: 'response',
+      origin: { kind: 'model', model: 'test' },
+      uuid: `cached-video-refresh-${action}`,
+      message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text: TEXT }] }
+    })
+    await clock.settle()
+    const ui = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text: TEXT, isFirstOfReply: true }
+    })
+    try {
+      const key = String((await ui.find({ type: 'Button', text: '▶ play' }))?.props.key)
+      await ui.press({ key })
+      await clock.settle()
+      await clock.advance(300)
+      expect(blits).toBe(3)
+      await clock.advance(16 * 60 * 1000)
+      blits = 0
+      await ui.press({ key })
+      await clock.settle()
+      if (action === 'cancel') {
+        expect(touching).toBe(true)
+        await ui.press({ key })
+        await clock.advance(1_000)
+      }
+      swept = !refreshed
+      await clock.advance(300)
+      expect(cuts).toBe(1)
+      expect(blits).toBe(action === 'play' ? 3 : 0)
+      expect(await ui.find({ type: 'Button', text: '▶ play' })).toBeDefined()
+      expect(await ui.find({ type: 'Button', text: 'cancel loading' })).toBeUndefined()
+    } finally {
+      await ui.unmount()
+    }
+  })
+}

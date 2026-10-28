@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  realpathSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  utimesSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { after, test } from 'node:test'
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), 'video-cache-test-')))
@@ -77,4 +89,71 @@ test('an interrupted metadata write never publishes a partial cache entry', () =
   assert.match(interrupted.stderr, /simulated interrupted metadata write/)
   assert.equal(readFileSync(kept, 'utf8'), original)
   assert.deepEqual(framesOf(invoke(cache)), first)
+})
+
+const touch = (cache, directory) =>
+  spawnSync(process.execPath, [join(import.meta.dirname, 'video.mjs'), 'touch'], {
+    input: directory,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      TMPDIR: cache,
+      TMP: cache,
+      TEMP: cache,
+      LOCALAPPDATA: cache,
+      PATH: cache
+    }
+  })
+
+test('cached playback refresh protects real frames from size-pressure cleanup without recutting', () => {
+  const cache = cacheRoot()
+  const first = framesOf(invoke(cache))
+  const frame = join(first.dir, 'f00001.png')
+  const bytes = readFileSync(frame)
+  const modified = statSync(frame).mtimeMs
+  const source = readFileSync(clip)
+  const date = new Date(Date.now() - 60 * 60 * 1000)
+  utimesSync(first.dir, date, date)
+  utimesSync(`${first.dir}.used`, date, date)
+  const pressure = join(dirname(first.dir), `${'e'.repeat(40)}.png`)
+  writeFileSync(pressure, '')
+  truncateSync(pressure, 513 * 1024 * 1024)
+  const used = touch(cache, first.dir)
+  assert.equal(used.status, 0, used.stderr)
+  assert.equal(JSON.parse(used.stdout).dir, first.dir)
+  const clean = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `import {mediaCacheDirectory} from ${JSON.stringify(new URL('./media-cache-directory.mjs', import.meta.url).href)}; mediaCacheDirectory()`
+    ],
+    {
+      encoding: 'utf8',
+      env: { ...process.env, TMPDIR: cache, TMP: cache, TEMP: cache, LOCALAPPDATA: cache }
+    }
+  )
+  assert.equal(clean.status, 0, clean.stderr)
+  assert.deepEqual(readFileSync(frame), bytes)
+  assert.equal(statSync(frame).mtimeMs, modified)
+  assert.deepEqual(readFileSync(clip), source)
+  assert.deepEqual(JSON.parse(readFileSync(join(first.dir, 'frames.json'), 'utf8')), first)
+})
+
+test('cached playback refresh refuses external and symlinked frame directories', () => {
+  const cache = cacheRoot()
+  const first = framesOf(invoke(cache))
+  const outside = join(cache, 'outside-cache')
+  mkdirSync(outside, { mode: 0o700 })
+  const sentinel = join(outside, 'sentinel')
+  writeFileSync(sentinel, 'untouched')
+  const link = join(dirname(first.dir), 'f'.repeat(40))
+  symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+  for (const directory of [outside, link]) {
+    const rejected = touch(cache, directory)
+    assert.notEqual(rejected.status, 0)
+    assert.match(rejected.stderr, /Unsafe video frame cache/)
+    assert.equal(existsSync(`${directory}.used`), false)
+  }
+  assert.equal(readFileSync(sentinel, 'utf8'), 'untouched')
 })

@@ -1,4 +1,4 @@
-import { FENCE, FORMULA } from './blocks.ts'
+import { FENCE, FORMULA, closesFormula } from './blocks.ts'
 
 // Claude's terminal Markdown leaf supports emphasis but not GFM deletion.
 // Only prose containing a deletion uses this inline tree. Code and math
@@ -124,11 +124,15 @@ const STARTS_WITH_LETTER = /^[^\s\p{P}\p{S}]/u
 /** The text with each bold run closable, its fences and `$$` formulas left as written. */
 export function holdBold(text: string) {
   let fence: string | undefined
+  const lines = text.split('\n')
 
-  return text
-    .split('\n')
-    .map((line) => {
-      const run = FENCE.exec(line)?.[1] ?? (FORMULA.test(line) ? '$$' : undefined)
+  return lines
+    .map((line, index) => {
+      const run =
+        FENCE.exec(line)?.[1] ??
+        (FORMULA.test(line) && (fence !== undefined || closesFormula(lines, index))
+          ? '$$'
+          : undefined)
       if (fence !== undefined) {
         if (
           run !== undefined &&
