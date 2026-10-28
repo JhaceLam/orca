@@ -150,3 +150,96 @@ test('cancelling during a missing-frame probe does not start another extraction'
     await ui.unmount()
   }
 })
+
+for (const state of ['playing', 'preparing']) {
+  for (const action of ['cancel', 'replace']) {
+    test(`${action} during the final ${state} write cannot revive an old video`, async ($, on) => {
+      const clock = mock.clock(on)
+      const text = '![first](first.mp4)\n\n![second](second.mp4)'
+      const blits: string[] = []
+      let extracted = false
+      let delayed = false
+      on('session.cwd', () => ({ value: '/work' }))
+      on('session.surfaces', () => ({ value: ['terminal'] }))
+      on('ui.render', { component: 'AssistantMessage' }, () => ({ type: 'engine', ref: 0 }))
+      on('ui.toast', () => ({ value: undefined }))
+      on('fs.stat', () => ({
+        value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false }
+      }))
+      on('fs.read', () => ({ value: { base64: PNG } }))
+      on('ui.blit', (_, e) => {
+        blits.push(e.key)
+        return { value: {} }
+      })
+      on('process.run', (_, e) => {
+        const first = e.init?.stdin?.includes('first') === true
+        const name = first ? 'first' : 'second'
+        if (e.argv[2] === 'frames' && first) {
+          extracted = true
+        }
+        return {
+          value: {
+            ...RAN,
+            stdout: JSON.stringify(
+              e.argv[2] === 'frames'
+                ? { dir: `/tmp/${name}-frames`, count: 30, fps: 10 }
+                : {
+                    file: `/tmp/${name}-poster.png`,
+                    width: 100,
+                    height: 40,
+                    clip: `/work/${name}.mp4`
+                  }
+            )
+          }
+        }
+      })
+      on('state.set', { plugin: 'reply-media', key: state }, async (_, e, next) => {
+        if (extracted && !delayed && (state === 'playing' || e.value === null)) {
+          delayed = true
+          await clock.sleep(1_000)
+        }
+        return next(e)
+      })
+      await $.session.append({
+        door: 'response',
+        origin: { kind: 'model', model: 'test' },
+        uuid: `video-final-write-${state}-${action}`,
+        message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+      })
+      await clock.settle()
+      const ui = await $.ui.mount({
+        plugin: 'reply-media',
+        surface: 'terminal',
+        component: 'AssistantMessage',
+        props: { text, isFirstOfReply: true }
+      })
+      try {
+        const keys = (await ui.findAll({ type: 'Button', text: '▶ play' })).map((button) =>
+          String(button.props.key)
+        )
+        expect(keys).toHaveLength(2)
+        await ui.press({ key: keys[0] })
+        await clock.settle()
+        expect(delayed).toBe(true)
+        expect(blits).toEqual([])
+        await ui.press({ key: keys[action === 'cancel' ? 0 : 1] })
+        await clock.settle()
+        await clock.advance(1_000)
+        await clock.advance(100)
+        expect(await ui.find({ type: 'Button', text: 'cancel loading' })).toBeUndefined()
+        if (action === 'cancel') {
+          expect(blits).toEqual([])
+          expect(await ui.findAll({ type: 'Button', text: '▶ play' })).toHaveLength(2)
+          expect(await ui.find({ type: 'Button', text: '❚❚ pause' })).toBeUndefined()
+        } else {
+          expect(blits.length).toBeGreaterThan(0)
+          expect(new Set(blits)).toEqual(new Set([keys[1].replace('play:', 'view:')]))
+          expect((await ui.find({ type: 'Button', text: '❚❚ pause' }))?.props.key).toBe(keys[1])
+          await ui.press({ key: keys[1] })
+        }
+      } finally {
+        await ui.unmount()
+      }
+    })
+  }
+}

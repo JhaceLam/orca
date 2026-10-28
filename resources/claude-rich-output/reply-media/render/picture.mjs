@@ -10,9 +10,9 @@ import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { mediaCacheDirectory } from './media-cache-directory.mjs'
+import { mediaCacheDirectory, pruneMediaCache } from './media-cache-directory.mjs'
 import { readPngCacheEntry } from './png-cache-entry.mjs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 // An SVG is drawn this many PNG px to each px of its own, as render.mjs draws
 // a diagram, so that it stays sharp when shown at its own size. Not imported
@@ -44,12 +44,12 @@ let zoom = 1
 // Told by its signature, not its extension: the terminal reads `file` as a
 // PNG whatever it is called.
 if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
-  const dir = mediaCacheDirectory()
   const isSvg = /\.svgz?$/i.test(path)
   zoom = isSvg ? ZOOM : 1
   // Named by path, mtime and zoom, so an edited file is drawn again, and so
   // is every SVG once the zoom changes.
   const name = createHash('sha1').update(`${path}${stat.mtimeMs}@${zoom}`).digest('hex')
+  const dir = mediaCacheDirectory(`${name}.png`)
   file = join(dir, `${name}.png`)
   if (!readPngCacheEntry(file)) {
     const temporary = `${file}.${process.pid}.${randomUUID()}.png`
@@ -88,6 +88,9 @@ if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
 const size = readPngCacheEntry(file)
 if (!size) {
   throw new Error(`not a complete PNG: ${path}`)
+}
+if (file !== path) {
+  pruneMediaCache(dirname(file), file)
 }
 console.log(
   JSON.stringify({

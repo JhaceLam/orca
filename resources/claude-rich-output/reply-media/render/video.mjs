@@ -9,7 +9,11 @@ import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { mediaCacheDirectory, privateMediaDirectory } from './media-cache-directory.mjs'
+import {
+  mediaCacheDirectory,
+  privateMediaDirectory,
+  pruneMediaCache
+} from './media-cache-directory.mjs'
 import { readPngCacheEntry } from './png-cache-entry.mjs'
 import { join, resolve } from 'node:path'
 
@@ -34,7 +38,8 @@ if (!stat.isFile()) {
 
 // Named by path and mtime, so an edited clip is cut again.
 const name = createHash('sha1').update(`${clip}${stat.mtimeMs}`).digest('hex')
-const dir = privateMediaDirectory(join(mediaCacheDirectory(), name))
+const root = mediaCacheDirectory(name)
+const dir = privateMediaDirectory(join(root, name))
 const frame = (number) => join(dir, `f${String(number).padStart(5, '0')}.png`)
 
 const run = (command, args) => {
@@ -121,6 +126,7 @@ if (process.argv[2] === 'frames') {
       rmSync(temporary, { force: true })
     }
   }
+  pruneMediaCache(root, dir)
   console.log(JSON.stringify(frames))
 } else {
   const file = join(dir, 'poster.png')
@@ -151,6 +157,7 @@ if (process.argv[2] === 'frames') {
       rmSync(temporary, { force: true })
     }
   }
+  pruneMediaCache(root, dir)
   console.log(
     JSON.stringify({
       file,

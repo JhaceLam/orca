@@ -108,15 +108,15 @@ async function startVideo(
   if (frames !== diagram.frames) {
     await update($, diagrams, (all) => ({ ...all, [block]: { ...diagram, frames } }))
   }
-  if (request !== playRequest) {
-    return
-  }
 
   // From the start again once it has reached its end.
   const from = stoppedAt.get(block) ?? 0
   let index = from >= frames.count - 1 ? 0 : from
-  await update($, playing, () => block)
-  await update($, preparing, () => null)
+  await update($, playing, (current) => (request === playRequest ? block : current))
+  await update($, preparing, (current) => (request === playRequest ? null : current))
+  if (request !== playRequest) {
+    return
+  }
   // A second press while the cut ran started a timer of its own.
   timer?.cancel()
   const own: PlaybackTimer = $.clock.every(Math.round(1000 / frames.fps), async () => {

@@ -5,9 +5,9 @@ import { runRendererProcess as spawnSync } from './process.mjs'
 import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { registerHooks } from 'node:module'
-import { mediaCacheDirectory } from './media-cache-directory.mjs'
+import { mediaCacheDirectory, pruneMediaCache } from './media-cache-directory.mjs'
 import { readPngCacheEntry } from './png-cache-entry.mjs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 // The terminal cannot recolor image pixels. Select light for a light terminal.
@@ -104,8 +104,8 @@ export function flatten(svg) {
 
 /** Draws `svg` as the private per-user cache/<sha1 of key>.png and prints its line. */
 function cacheFile(key) {
-  const dir = mediaCacheDirectory()
-  return join(dir, `${createHash('sha1').update(key).digest('hex')}.png`)
+  const name = `${createHash('sha1').update(key).digest('hex')}.png`
+  return join(mediaCacheDirectory(name), name)
 }
 
 export function cached(key) {
@@ -140,6 +140,7 @@ export function rasterize(svg, key) {
   if (!size) {
     throw new Error('conversion did not produce a complete PNG')
   }
+  pruneMediaCache(dirname(file), file)
   console.log(JSON.stringify({ file, width: size.width / ZOOM, height: size.height / ZOOM }))
 }
 
