@@ -122,6 +122,7 @@ it.each([
         `--json=${output}`
       ],
       cwd: process.cwd(),
+      env: { ...process.env, ORCA_BALANCE_UNIT_SHARDS: '0' },
       timeoutMs: 20_000
     })
     expect(result.code, result.stderr).toBe(0)
