@@ -63,7 +63,7 @@ beforeEach(() => {
         onRequestTerminalTabMount: () => () => {},
         replyTerminalCreate: vi.fn()
       },
-      worktrees: { updateMeta: vi.fn().mockResolvedValue(undefined) }
+      worktrees: { updateMeta: vi.fn().mockResolvedValue(null) }
     }
   })
   registerTerminalPresentationIpcBridge([])

@@ -1,7 +1,7 @@
 import { globSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
-import { runProcessSync } from '@orca/process-host'
+import { runProcess } from '@orca/process-host'
 import ts from 'typescript-api'
 import { expect, it } from 'vitest'
 import { discoverUnitFiles } from './ci-unit-files.mjs'
@@ -107,11 +107,11 @@ it.each([
     pattern:
       /[/\\]src[/\\]renderer[/\\]src[/\\]runtime[/\\]layout-apply-paired-server-guard\.test\.ts$/
   }
-])('collects $fixture exactly once in the Node project', ({ file, pattern }) => {
+])('collects $fixture exactly once in the Node project', async ({ file, pattern }) => {
   const directory = mkdtempSync(join(tmpdir(), 'orca-runtime-list-'))
   try {
     const output = join(directory, 'files.json')
-    const result = runProcessSync({
+    const result = await runProcess({
       program: process.execPath,
       args: [
         'config/scripts/run-vitest.mjs',
@@ -124,7 +124,9 @@ it.each([
       ],
       cwd: process.cwd(),
       env: { ...process.env, ORCA_BALANCE_UNIT_SHARDS: '0' },
-      timeoutMs: 20_000
+      timeoutMs: 20_000,
+      detached: true,
+      terminationBarrier: true
     })
     expect(result.code, result.stderr).toBe(0)
     const collected: unknown = JSON.parse(readFileSync(output, 'utf8'))
