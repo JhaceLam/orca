@@ -12,6 +12,8 @@ const NODE_RUNTIME_INCLUDE = [
   // Preserve exact Node filesystem inode, mode, and timestamp observations.
   'src/main/hermes/hermes-config-preservation.test.ts',
   'config/scripts/vitest-sqlite-runtime-boundary.test.ts',
+  // Historical releases retain the application's Node filesystem and native-module semantics.
+  'tests/e2e/cross-version-wire/**/*.unit.test.ts',
   'config/scripts/cloud-security-history-workflow.test.mjs',
   'config/scripts/skill-recipe-shell.test.mjs',
   'src/main/ssh/legacy-relay/ssh-relay-endpoint-incumbent-shell.integration.test.ts',

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { removeTree } from '../../shared/windows-transient-lock-removal'
 import {
+  PREFLIGHT_COMMAND_TIMEOUT_MS,
   execLocalPreflightCommandOrThrow,
   findRunnableLocalCommand,
   isCommandAvailable,
@@ -19,11 +20,19 @@ let root = ''
 async function cliInDirectory(label: string, body = 'echo gh-version-fixture\n'): Promise<string> {
   const dir = path.join(root, label)
   await mkdir(dir, { recursive: true })
+  await writeFile(path.join(dir, 'argv.txt'), '')
   await writeFile(
     path.join(dir, COMMAND),
-    `#!/bin/sh\nprintf '%s\\n' "$@" >> ${quotePosixShell(path.join(dir, 'argv.txt'))}\n${body}`,
+    `#!/bin/sh\nif [ "$1" = "--orca-fixture-ready" ]; then exit 0; fi\nprintf '%s\\n' "$@" >> ${quotePosixShell(path.join(dir, 'argv.txt'))}\n${body}`,
     { mode: 0o755 }
   )
+  const ready = await processHost.runProcess({
+    program: path.join(dir, COMMAND),
+    args: ['--orca-fixture-ready'],
+    timeoutMs: PREFLIGHT_COMMAND_TIMEOUT_MS,
+    terminationBarrier: true
+  })
+  expect(ready.code, ready.stderr).toBe(0)
   return dir
 }
 

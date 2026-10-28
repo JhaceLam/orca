@@ -106,6 +106,28 @@ const RELEASE_PROCESS_HOST = {
 }
 
 describe('release checkout workspace packages', () => {
+  it('prepares a release once when the workspace root overlaps archived src', async () => {
+    const { repo, commit } = commitRelease({
+      'pnpm-workspace.yaml': 'packages:\n  - src/*\n',
+      'src/release-overlap/package.json': JSON.stringify({
+        name: '@orca/release-overlap',
+        type: 'module',
+        exports: { '.': { 'orca-source': './src/index.ts', default: './dist/index.js' } }
+      }),
+      'src/release-overlap/src/index.ts': "export const value = 'released-overlap'\n",
+      'src/main/consumer.ts': "export { value } from '@orca/release-overlap'\n",
+      'src/main/stale.test.ts': "throw new Error('stale release spec')\n"
+    })
+    const extracted = temporaryDirectory('orca-cross-version-overlapping-root-')
+    await extractReleaseCheckoutTree(repo, extracted, commit)
+    expect(existsSync(join(extracted, 'src/main/stale.test.ts'))).toBe(false)
+    const loaded = await importReleaseCheckoutModule(
+      { ref: commit, commit, label: 'overlapping-src', root: extracted },
+      'src/main/consumer.ts'
+    )
+    expect(loaded.value).toBe('released-overlap')
+  })
+
   it('loads the release workspace package rather than the current one', async () => {
     expect('releaseOnlyExport' in currentProcessHost).toBe(false)
     const { repo, commit } = commitRelease({

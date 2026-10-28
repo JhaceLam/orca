@@ -63,6 +63,12 @@ it('keeps exposed-GC heap measurements in the Node runtime project', () => {
 
 it.each([
   {
+    fixture: 'historical release checkout and source fixture',
+    file: 'tests/e2e/cross-version-wire/qoder-history-search-downgrade.unit.test.ts',
+    pattern:
+      /[/\\]tests[/\\]e2e[/\\]cross-version-wire[/\\]qoder-history-search-downgrade\.unit\.test\.ts$/
+  },
+  {
     fixture: 'indirect native PTY shell fixture',
     file: 'src/main/daemon/repro-13767-shell-ready-marker-lost-to-exec.test.ts',
     pattern:
