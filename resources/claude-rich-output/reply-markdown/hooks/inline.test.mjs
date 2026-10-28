@@ -89,3 +89,34 @@ test('a closed display formula stays literal while CJK prose after it is closabl
   const formula = '$$\n**literal。**word\n$$'
   assert.equal(holdBold(`${formula}\n**最後。**段落`), `${formula}\n**最後**。段落`)
 })
+
+for (const { name, text, parts } of [
+  {
+    name: 'before',
+    text: '~~old~~ text\n\n$$\na = b',
+    parts: [{ mark: 'strike', children: [{ text: 'old' }] }, { text: ' text\n\n$$\na = b' }]
+  },
+  {
+    name: 'after',
+    text: '$$\na = b\n~~after~~',
+    parts: [{ text: '$$\na = b\n' }, { mark: 'strike', children: [{ text: 'after' }] }]
+  },
+  {
+    name: 'both sides',
+    text: '~~old~~\n\n$$\n~~new~~',
+    parts: [
+      { mark: 'strike', children: [{ text: 'old' }] },
+      { text: '\n\n$$\n' },
+      { mark: 'strike', children: [{ text: 'new' }] }
+    ]
+  }
+]) {
+  test(`deletion ${name} an unmatched dollar line retains its inline styling`, () => {
+    assert.deepEqual(inline(text), parts)
+  })
+}
+
+test('a closed display formula keeps deletion examples literal in inline parsing', () => {
+  const text = '$$\n~~literal~~\n$$'
+  assert.deepEqual(inline(text), [{ text }])
+})

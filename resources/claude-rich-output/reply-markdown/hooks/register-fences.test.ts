@@ -91,12 +91,14 @@ for (const fence of ['```', '````', '~~~']) {
     })
     try {
       expect((await ui.find({ type: 'Code' }))?.props.source).toBe(source)
-      expect(drawn).toEqual(['~~before~~\n\n$$'])
-      expect(
-        (await ui.findAll({ type: 'Text', text: /^after$/ })).some(
-          (node) => node.props.strikethrough === true
-        )
-      ).toBe(true)
+      expect(drawn).toEqual([])
+      for (const text of ['before', 'after']) {
+        expect(
+          (await ui.findAll({ type: 'Text', text: new RegExp(`^${text}$`) })).some(
+            (node) => node.props.strikethrough === true
+          )
+        ).toBe(true)
+      }
       expect(await ui.find({ type: 'Text', text: /^literal$/ })).toBeUndefined()
     } finally {
       await ui.unmount()
@@ -125,6 +127,30 @@ for (const fence of ['```', '````', '~~~']) {
     try {
       expect((await ui.find({ type: 'Code' }))?.props.source).toBe(source)
       expect(drawn).toEqual(['$$\n**收斂**。記憶', '**最後**。段落'])
+    } finally {
+      await ui.unmount()
+    }
+  })
+}
+
+for (const [name, text, deleted] of [
+  ['before', '~~old~~ text\n\n$$\na = b', 'old'],
+  ['after', '$$\na = b\n~~after~~', 'after']
+]) {
+  test(`deletion ${name} an unmatched formula is styled in the real renderer`, async ($, on) => {
+    on('settings.read', () => ({ value: {} }))
+    const ui = await $.ui.mount({
+      plugin: 'reply-markdown',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    try {
+      expect(
+        (await ui.findAll({ type: 'Text', text: new RegExp(`^${deleted}$`) })).some(
+          (node) => node.props.strikethrough === true
+        )
+      ).toBe(true)
     } finally {
       await ui.unmount()
     }

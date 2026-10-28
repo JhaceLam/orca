@@ -12,11 +12,16 @@ export type Inline =
       href?: string
     }
 
-const fence = /^(?:\s*`{3,}|\s*~{3,}|\$\$\s*$)/m
+const hasBlockSyntax = (text: string) => {
+  const lines = text.split('\n')
+  return lines.some(
+    (line, index) => FENCE.test(line) || (FORMULA.test(line) && closesFormula(lines, index))
+  )
+}
 const run = (text: string, at: number) => text.slice(at).match(/^(`+)/)?.[0]
 
 export function inline(text: string, depth = 0): Inline[] {
-  if (depth > 12 || fence.test(text)) {
+  if (depth > 12 || hasBlockSyntax(text)) {
     return [{ text }]
   }
   const result: Inline[] = []
