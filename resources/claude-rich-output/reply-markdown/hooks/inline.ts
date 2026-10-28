@@ -20,6 +20,7 @@ export function inline(text: string, depth = 0): Inline[] {
     return [{ text }]
   }
   const result: Inline[] = []
+  const unmatched = new Set<string>()
   const literal = (value: string) => {
     const last = result.at(-1)
     if (last && 'text' in last) {
@@ -62,6 +63,7 @@ export function inline(text: string, depth = 0): Inline[] {
     const delimiter = ['~~', '**', '__', '*', '_'].find((d) => text.startsWith(d, at))
     if (
       delimiter &&
+      !unmatched.has(delimiter) &&
       /\S/.test(text[at + delimiter.length] ?? '') &&
       !(delimiter[0] === '_' && /[\p{L}\p{N}]/u.test(text[at - 1] ?? ''))
     ) {
@@ -97,6 +99,7 @@ export function inline(text: string, depth = 0): Inline[] {
         at = end + delimiter.length
         continue
       }
+      unmatched.add(delimiter)
     }
     literal(text[at]!)
     at++

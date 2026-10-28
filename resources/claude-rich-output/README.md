@@ -61,6 +61,11 @@ fetches are performed by these modules.
 
 ## Validation
 
+For local feature development, run `pnpm build:claude-rich-output` before `pnpm dev`.
+Ordinary install, test, typecheck, and dev preparation build only shared workspace
+packages. Desktop packaging, direct Orcad builds, and the Orcad template's target
+builds prepare the rich-output bundle explicitly.
+
 With the execution-host prerequisites installed, run `pnpm test:claude-rich-output`
 to run the renderer regressions plus Claude's own plugin validation and hook tests.
 This separate runner requires Claude Code and librsvg/ffmpeg, and is not part of

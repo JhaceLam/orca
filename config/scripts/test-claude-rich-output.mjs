@@ -1,6 +1,7 @@
 import { globSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { runProcessSync } from '@orca/process-host'
+import { describeProcessFailure } from './process-failure-message.mjs'
 
 const root = fileURLToPath(new URL('../..', import.meta.url))
 const tests = [
@@ -10,7 +11,7 @@ const tests = [
 function run(program, args) {
   const result = runProcessSync({ program, args, cwd: root, stdio: 'inherit', timeoutMs: 180_000 })
   if (result.code !== 0) {
-    throw new Error(`${program} ${args.join(' ')} failed: ${result.code ?? result.error}`)
+    throw new Error(`${program} ${args.join(' ')} failed: ${describeProcessFailure(result)}`)
   }
 }
 if (tests.length === 0) {

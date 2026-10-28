@@ -46,3 +46,26 @@ for (const delimiter of ['*', '_']) {
     })
   }
 }
+
+for (const count of [128, 512]) {
+  test(`unclosed deletion markers keep literal text with bounded scanning (${count})`, () => {
+    const text = '~~x '.repeat(count)
+    const startsWith = String.prototype.startsWith
+    let comparisons = 0
+    let parsed
+    try {
+      String.prototype.startsWith = function (...args) {
+        comparisons++
+        return Reflect.apply(startsWith, this, args)
+      }
+      parsed = inline(text)
+    } finally {
+      String.prototype.startsWith = startsWith
+    }
+    assert.deepEqual(parsed, [{ text }])
+    assert.ok(
+      comparisons < text.length * 24,
+      `${comparisons} comparisons for ${text.length} characters`
+    )
+  })
+}

@@ -142,7 +142,7 @@ await import('./config/scripts/build-claude-rich-output.mjs');`
 )
 
 test('a cached workspace package build still refreshes changed rich-output resources', () => {
-  const { root, put, deployments } = fixture()
+  const { root, put, deployments, runBuild } = fixture()
   put(
     'config/scripts/build-workspace-packages.mjs',
     readFileSync(join(scripts, 'build-workspace-packages.mjs'))
@@ -171,6 +171,8 @@ appendFileSync(join(root, 'package-build.log'), 'build\\n');`
       timeoutMs: 30_000
     })
     expect(result.code, result.stderr).toBe(0)
+    const rich = runBuild()
+    expect(rich.code, rich.stderr).toBe(0)
   }
   build()
   expect(existsSync(join(root, 'out/claude-rich-output/manifest.json'))).toBe(true)

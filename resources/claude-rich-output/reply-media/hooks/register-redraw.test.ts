@@ -190,3 +190,51 @@ for (const failure of ['temporary', 'persistent']) {
     expect(toasts).toHaveLength(failure === 'temporary' ? 1 : 2)
   })
 }
+
+test('a successfully recovered preview can recover again after another sweep', async ($, on) => {
+  const clock = mock.clock(on)
+  const text = '```math\nx^3 + 1\n```'
+  const swept = new Set<string>()
+  let renders = 0
+  on('session.cwd', () => ({ value: '/work' }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('fs.stat', (_, e) =>
+    swept.has(e.path)
+      ? { deny: 'ENOENT: preview was swept again' }
+      : { value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }
+  )
+  on('fs.read', () => ({ value: { base64: PNG } }))
+  on('process.run', () => ({
+    value: {
+      exitCode: 0,
+      stdout: JSON.stringify({ file: `/tmp/preview-${++renders}.png`, width: 100, height: 40 }),
+      stderr: '',
+      isStdoutTruncated: false,
+      isStderrTruncated: false
+    }
+  }))
+  on('ui.render', { component: 'AssistantMessage' }, () => ({ type: 'engine', ref: 0 }))
+  await $.session.append({
+    door: 'response',
+    origin: { kind: 'model', model: 'test' },
+    uuid: 'repeated-successful-redraw',
+    message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+  })
+  await clock.settle()
+  for (let cycle = 1; cycle <= 3; cycle++) {
+    const mounted = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    try {
+      await clock.settle()
+      expect(await mounted.find({ type: 'Image' })).toBeDefined()
+      expect(renders).toBe(cycle)
+    } finally {
+      await mounted.unmount()
+    }
+    swept.add(`/tmp/preview-${cycle}.png`)
+  }
+})

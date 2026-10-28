@@ -374,6 +374,7 @@ export const register: Register = (on, options) => {
         children.push(await next({ ...e, props }))
         continue
       }
+      redrawn.delete(block)
       children.push(
         <Box flexDirection="column" paddingLeft={indent} marginTop={1}>
           <Image
