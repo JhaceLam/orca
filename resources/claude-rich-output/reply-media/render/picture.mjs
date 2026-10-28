@@ -62,6 +62,8 @@ if (header(path).toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
               '-v',
               'error',
               '-y',
+              '-protocol_whitelist',
+              'file',
               '-i',
               path,
               '-frames:v',

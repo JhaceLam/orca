@@ -68,7 +68,17 @@ if (process.argv[2] === 'frames') {
   if (!frames || !readPngCacheEntry(frame(1)) || !readPngCacheEntry(frame(frames.count))) {
     // A recording may carry no duration (a MediaRecorder webm): the top rate.
     const duration = Number(
-      run('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', clip])
+      run('ffprobe', [
+        '-v',
+        'error',
+        '-protocol_whitelist',
+        'file',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'csv=p=0',
+        clip
+      ])
     )
     const fps =
       duration > 0 ? Math.max(1, Math.min(MAX_FPS, Math.floor(MAX_FRAMES / duration))) : MAX_FPS
@@ -78,6 +88,8 @@ if (process.argv[2] === 'frames') {
         '-v',
         'error',
         '-y',
+        '-protocol_whitelist',
+        'file',
         '-i',
         clip,
         '-vf',
@@ -116,7 +128,20 @@ if (process.argv[2] === 'frames') {
   if (!size) {
     const temporary = join(dir, `poster.${process.pid}.${randomUUID()}.png`)
     try {
-      run('ffmpeg', ['-v', 'error', '-y', '-i', clip, '-vf', scale, '-frames:v', '1', temporary])
+      run('ffmpeg', [
+        '-v',
+        'error',
+        '-y',
+        '-protocol_whitelist',
+        'file',
+        '-i',
+        clip,
+        '-vf',
+        scale,
+        '-frames:v',
+        '1',
+        temporary
+      ])
       size = readPngCacheEntry(temporary)
       if (!size) {
         throw new Error('Video extraction did not produce a complete PNG poster')
