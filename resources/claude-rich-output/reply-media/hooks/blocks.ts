@@ -91,7 +91,11 @@ export function splitBlocks(text: string): string[] {
         end++
       }
       if (end === lines.length) {
-        break
+        if (opening !== undefined) {
+          break
+        }
+        position += line.length + 1
+        continue
       }
     } else if (!IMAGE.test(line)) {
       position += line.length + 1
