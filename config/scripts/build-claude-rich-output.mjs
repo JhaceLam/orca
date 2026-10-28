@@ -1,7 +1,6 @@
 import { build } from 'esbuild'
 import {
   existsSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
   writeFileSync,
@@ -12,7 +11,7 @@ import {
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcess } from '@orca/process-host'
-import lockfile from 'proper-lockfile'
+import { withClaudeRichOutputBuildLock } from './claude-rich-output-build-lock.mjs'
 import { computeClaudeRichOutputSourceHash } from './claude-rich-output-source-hash.mjs'
 import { resolvePnpmCliInvocation } from './pnpm-cli-invocation.mjs'
 import { claudeRichOutputAssetFilenames } from '../../src/shared/claude-rich-output-artifacts.ts'
@@ -33,23 +32,7 @@ function deploymentIsComplete() {
     return false
   }
 }
-mkdirSync(join(root, 'out'), { recursive: true })
-let compromised
-const release = await lockfile.lock(root, {
-  lockfilePath: join(root, 'out', '.claude-rich-output-build.lock'),
-  realpath: false,
-  stale: 30_000,
-  retries: { retries: 1_000, minTimeout: 50, maxTimeout: 250 },
-  onCompromised: (error) => {
-    compromised = error
-  }
-})
-function assertLockHeld() {
-  if (compromised) {
-    throw compromised
-  }
-}
-try {
+await withClaudeRichOutputBuildLock(root, async (assertLockHeld) => {
   const key = computeClaudeRichOutputSourceHash(root)
   if (!existsSync(marker) || readFileSync(marker, 'utf8') !== key || !deploymentIsComplete()) {
     const { command, prefixArgs } = resolvePnpmCliInvocation()
@@ -125,8 +108,4 @@ try {
   const manifestText = JSON.stringify({ assets: assets.sort() })
   claudeRichOutputAssetFilenames(manifestText)
   writeFileSync(join(output, 'manifest.json'), manifestText)
-} finally {
-  if (!compromised) {
-    await release()
-  }
-}
+})

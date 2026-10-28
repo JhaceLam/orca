@@ -137,6 +137,8 @@ function holdBold(text: string) {
     .join('\n')
 }
 
+const hasDeletion = (text: string) => text.includes('~~') && hasStrike(inline(text))
+
 export const register: Register = (on, options) => {
   if (options.enabled === false) {
     return
@@ -173,7 +175,7 @@ export const register: Register = (on, options) => {
     const text = holdBold(e.props.text)
     const blocks = restyle(parse(text), off)
 
-    if (blocks.every((block) => block.kind === 'raw' && !hasStrike(inline(block.text)))) {
+    if (blocks.every((block) => block.kind === 'raw' && !hasDeletion(block.text))) {
       return next({ ...e, props: { ...e.props, text } })
     }
 
@@ -211,7 +213,7 @@ export const register: Register = (on, options) => {
       })
     }
     const prose = (text: string, dimColor = false) => {
-      const parts = inline(text)
+      const parts = text.includes('~~') ? inline(text) : []
       return hasStrike(parts) ? (
         <Text dimColor={dimColor}>{spans(parts)}</Text>
       ) : (
@@ -236,7 +238,7 @@ export const register: Register = (on, options) => {
 
       if (block.kind === 'raw') {
         rows.push(
-          hasStrike(inline(block.text)) ? (
+          hasDeletion(block.text) ? (
             <Box marginTop={1} width={columns}>
               {prose(block.text)}
             </Box>
