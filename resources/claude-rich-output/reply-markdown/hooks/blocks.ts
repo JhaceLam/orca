@@ -104,6 +104,7 @@ export function parse(text: string): Block[] {
   }
 
   const lines = text.split('\n')
+  const lastFormulaIndex = lines.findLastIndex((line) => FORMULA.test(line))
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index] ?? ''
@@ -140,7 +141,7 @@ export function parse(text: string): Block[] {
         }
         fence = undefined
       }
-    } else if (FENCE.test(line) || FORMULA.test(line)) {
+    } else if (FENCE.test(line) || (FORMULA.test(line) && index < lastFormulaIndex)) {
       flush()
       keep(line)
       fence = FENCE.exec(line)?.[1] ?? '$$'

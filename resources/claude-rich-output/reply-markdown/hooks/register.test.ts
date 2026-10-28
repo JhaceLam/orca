@@ -527,3 +527,40 @@ test(
     expect((await $.prompt.compose(input)).sections.map((section) => section.id)).toEqual([])
   }
 )
+
+test('an unmatched $$ line keeps later headings, lists, tables, rules and code styled', async ($, on) => {
+  const drawn = engine(on)
+  const ui = await mount(
+    $,
+    '$$\n\n# Title\n\n- item\n\n| A | B |\n|---|---|\n| one | two |\n\n---\n\n```ts\nconst value = 1\n```'
+  )
+  try {
+    expect(await ui.find({ type: 'Text', text: ' Title ' })).toBeDefined()
+    expect((await ui.findAll({ type: 'Markdown' })).map((item) => item.props.text)).toEqual([
+      'item',
+      'one',
+      'two'
+    ])
+    expect(await ui.find({ type: 'Text', text: /^─+$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Code' }))?.props.source).toBe('const value = 1')
+    expect(drawn).toEqual(['$$'])
+  } finally {
+    await ui.unmount()
+  }
+})
+
+test('a trailing unmatched $$ keeps earlier complete formulas whole and later blocks styled', async ($, on) => {
+  const drawn = engine(on)
+  const formula = '$$\na = b\n+ c\n- d\n$$'
+  const ui = await mount($, `${formula}\n\n$$\n\n## Still styled\n\n> quoted\n\n- item`)
+  try {
+    expect(await ui.find({ type: 'Text', text: '▌ Still styled' })).toBeDefined()
+    expect((await ui.findAll({ type: 'Markdown' })).map((item) => item.props.text)).toEqual([
+      'quoted',
+      'item'
+    ])
+    expect(drawn).toEqual([`${formula}\n\n$$`])
+  } finally {
+    await ui.unmount()
+  }
+})
