@@ -124,3 +124,44 @@ test('a real staging filesystem failure releases ownership for a subsequent copy
   expect(readFileSync(join(root, 'staged/claude-rich-output/foo'), 'utf8')).toBe('barvalue')
   expect(existsSync(join(root, 'out/.claude-rich-output-build.lock'))).toBe(false)
 })
+
+test.each(['fulfilled', 'rejected'])(
+  'a release callback failure preserves the %s build outcome',
+  async (outcome) => {
+    const { default: lockfile } = await import('proper-lockfile')
+    const { withClaudeRichOutputBuildLock } = await import('./claude-rich-output-build-lock.mjs')
+    const { root } = createClaudeRichOutputBuildFixture()
+    const originalLock = lockfile.lock.bind(lockfile)
+    const failure = new Error('resource build failed')
+    const releaseFailure = new Error('release callback failed after native unlock')
+    const result = { manifest: 'written' }
+    let released = 0
+    const spy = vi.spyOn(lockfile, 'lock').mockImplementationOnce(async (...args) => {
+      const release = await originalLock(...args)
+      return async () => {
+        await release()
+        released++
+        throw releaseFailure
+      }
+    })
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const building = withClaudeRichOutputBuildLock(root, async (assertLockHeld) => {
+        assertLockHeld()
+        if (outcome === 'rejected') {
+          throw failure
+        }
+        return result
+      })
+      await (outcome === 'rejected'
+        ? expect(building).rejects.toBe(failure)
+        : expect(building).resolves.toBe(result))
+      expect(released).toBe(1)
+      expect(existsSync(join(root, 'out/.claude-rich-output-build.lock'))).toBe(false)
+      expect(warning).toHaveBeenCalledWith(expect.any(String), releaseFailure)
+    } finally {
+      spy.mockRestore()
+      warning.mockRestore()
+    }
+  }
+)

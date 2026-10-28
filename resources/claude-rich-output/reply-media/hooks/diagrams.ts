@@ -30,6 +30,40 @@ export function scheduleRender(
   })
 }
 
+export async function renderResumed(
+  $: EngineInterface,
+  replies: readonly string[],
+  drawn: ReadonlySet<Script>
+) {
+  if (replies.length === 0) {
+    return
+  }
+  const deadline = (await $.clock.now()) + RENDER_TIMEOUT_MS
+  let budgetTimer: { cancel: () => void } | undefined
+  const budget = new Promise<void>((resolve) => {
+    budgetTimer = $.clock.after(RENDER_TIMEOUT_MS, resolve)
+  })
+  try {
+    await Promise.race([
+      (async () => {
+        for (const text of replies) {
+          if ((await $.clock.now()) >= deadline) {
+            break
+          }
+          try {
+            await render($, text, drawn, true, deadline)
+          } catch (error) {
+            $.ui.toast(`Media preview failed: ${String(error)}`)
+          }
+        }
+      })(),
+      budget
+    ])
+  } finally {
+    budgetTimer?.cancel()
+  }
+}
+
 /**
  * Renders each block of `text` that has no outcome yet, and records it;
  * `isForced` renders the ones that have an outcome too.
@@ -38,7 +72,8 @@ export async function render(
   $: EngineInterface,
   text: string,
   drawn: ReadonlySet<Script>,
-  isForced = false
+  isForced = false,
+  deadline?: number
 ) {
   const cwd = await $.session.cwd()
 
@@ -54,6 +89,9 @@ export async function render(
     if (job === undefined || (!isFile && !isForced && known[block] && !('error' in known[block]))) {
       continue
     }
+    if (deadline !== undefined && (await $.clock.now()) >= deadline) {
+      return
+    }
 
     // Append, resume and a retry button may request the same block together.
     // Share that render instead of racing writers or multiplying cold starts.
@@ -64,10 +102,22 @@ export async function render(
       continue
     }
     const task = (async () => {
-      const init = { stdin: job.source, timeoutMs: RENDER_TIMEOUT_MS, cwd }
+      const remaining =
+        deadline === undefined ? RENDER_TIMEOUT_MS : deadline - (await $.clock.now())
+      if (remaining <= 0) {
+        return
+      }
+      const init = { stdin: job.source, timeoutMs: Math.min(RENDER_TIMEOUT_MS, remaining), cwd }
       let outcome = await run<Diagram>($, [job.script], init)
       if ('error' in outcome && /aborted: still running after \d+ms/.test(outcome.error)) {
-        outcome = await run<Diagram>($, [job.script], init)
+        const retryBudget =
+          deadline === undefined ? RENDER_TIMEOUT_MS : deadline - (await $.clock.now())
+        if (retryBudget > 0) {
+          outcome = await run<Diagram>($, [job.script], {
+            ...init,
+            timeoutMs: Math.min(RENDER_TIMEOUT_MS, retryBudget)
+          })
+        }
       }
       await update($, diagrams, (all) => ({ ...all, [block]: outcome }))
     })()

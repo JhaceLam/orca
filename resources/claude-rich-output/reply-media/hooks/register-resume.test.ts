@@ -114,6 +114,7 @@ for (const [empty, visible] of [
 
 for (const failure of ['stop', 'messages', 'first render']) {
   test(`resume forwards the native event after a ${failure} failure`, async ($, on) => {
+    mock.clock(on)
     const converted: (string | undefined)[] = []
     const forwarded: unknown[] = []
     const toasts: string[] = []
@@ -192,4 +193,125 @@ test('resume does not report downstream session-start failures as media failures
   await expect($.session.start(START)).rejects.toThrow('no implementation for session.start')
   expect(forwarded).toBe(1)
   expect(toasts).toEqual([])
+})
+
+for (const [layout, replies] of [
+  ['separate replies', [formula('a'), formula('b'), `${formula('c')}\n\n${formula('d')}`]],
+  ['multiple blocks', [['a', 'b', 'c', 'd'].map(formula).join('\n\n')]]
+] as const) {
+  test(`resume shares one converter budget across ${layout}`, async ($, on) => {
+    const clock = mock.clock(on)
+    const calls: { source: string | undefined; timeoutMs: number | undefined }[] = []
+    const nativeText: string[] = []
+    let returned = false
+    let nativeCalls = 0
+    on('session.cwd', () => ({ value: '/work' }))
+    on('session.messages', () => ({
+      value: replies.map((text) => ({ role: 'assistant' as const, text, toolUses: [] }))
+    }))
+    on('process.run', async (_, e) => {
+      calls.push({ source: e.init?.stdin, timeoutMs: e.init?.timeoutMs })
+      const wait = Math.min(12_000, e.init?.timeoutMs ?? 0)
+      await clock.sleep(wait)
+      return wait < 12_000
+        ? { deny: `reply-media: $.process.run(node) aborted: still running after ${wait}ms` }
+        : { value: RAN }
+    })
+    on('session.start', () => {
+      nativeCalls++
+      return { cwd: '/native-result' }
+    })
+    on('fs.stat', () => ({ value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }))
+    on('fs.read', () => ({ value: { base64: PNG } }))
+    on('ui.render', { component: 'AssistantMessage' }, (_, e) => {
+      nativeText.push(e.props.text)
+      return { type: 'engine', ref: 0 }
+    })
+    const start = $.session.start(START).then((value) => {
+      returned = true
+      return value
+    })
+    try {
+      await clock.settle()
+      await clock.advance(24_000)
+      expect(returned).toBe(false)
+      expect(nativeCalls).toBe(0)
+      await clock.advance(6_000)
+      expect(returned).toBe(true)
+      expect(await start).toEqual({ cwd: '/native-result' })
+      expect(nativeCalls).toBe(1)
+      expect(calls).toEqual([
+        { source: 'a', timeoutMs: 30_000 },
+        { source: 'b', timeoutMs: 18_000 },
+        { source: 'c', timeoutMs: 6_000 }
+      ])
+      const ui = await $.ui.mount({
+        plugin: 'reply-media',
+        surface: 'terminal',
+        component: 'AssistantMessage',
+        props: { text: replies.join('\n\n'), isFirstOfReply: true }
+      })
+      try {
+        expect((await ui.findAll({ type: 'Image' })).map((image) => image.props.alt)).toEqual([
+          'a',
+          'b'
+        ])
+        expect(nativeText).toContain(formula('d'))
+      } finally {
+        await ui.unmount()
+      }
+    } finally {
+      await clock.advance(120_000)
+      await start
+    }
+  })
+}
+
+test('resume bounds its wait for a render already started by append', async ($, on) => {
+  const clock = mock.clock(on)
+  const text = formula('pending-render')
+  let calls = 0
+  let returned = false
+  let nativeCalls = 0
+  on('session.cwd', () => ({ value: '/work' }))
+  on('session.surfaces', () => ({ value: ['terminal'] }))
+  on('session.messages', () => ({
+    value: [{ role: 'assistant' as const, text, toolUses: [] }]
+  }))
+  on('process.run', async (_, e) => {
+    calls++
+    const wait = e.init?.timeoutMs ?? 0
+    await clock.sleep(wait)
+    return { deny: `reply-media: $.process.run(node) aborted: still running after ${wait}ms` }
+  })
+  on('session.start', () => {
+    nativeCalls++
+    return { cwd: '/native-result' }
+  })
+  await $.session.append({
+    door: 'response',
+    origin: { kind: 'model', model: 'test' },
+    uuid: 'pending-at-resume',
+    message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+  })
+  await clock.settle()
+  expect(calls).toBe(1)
+  const start = $.session.start(START).then((value) => {
+    returned = true
+    return value
+  })
+  try {
+    await clock.settle()
+    expect(nativeCalls).toBe(0)
+    await clock.advance(30_000)
+    expect(returned).toBe(true)
+    expect(await start).toEqual({ cwd: '/native-result' })
+    expect(nativeCalls).toBe(1)
+    expect(calls).toBe(2)
+  } finally {
+    await clock.advance(60_000)
+    await start
+    expect(nativeCalls).toBe(1)
+    expect(calls).toBe(2)
+  }
 })

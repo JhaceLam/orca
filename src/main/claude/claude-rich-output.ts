@@ -38,7 +38,7 @@ export async function applyClaudeRichOutputEnv(
   // The launch intent must not leak into a nested Orca process after this host consumes it.
   delete env.ORCA_CLAUDE_RICH_OUTPUT
   restoreOrStripOverlayEnv(env, overlay, inheritedEnv)
-  if (options.launchAgent !== 'claude' || !enabled || options.isWsl) {
+  if (options.launchAgent !== 'claude' || !enabled || options.isWsl || !options.cwd) {
     return
   }
   const launchEnv = { ...env }
@@ -62,7 +62,7 @@ export async function applyClaudeRichOutputEnv(
   const dirs = new Set(source.split(delimiter).filter(Boolean))
   let installed: Set<string>
   try {
-    installed = await findClaudeRichOutputConflicts(launchEnv, options.cwd ?? process.cwd())
+    installed = await findClaudeRichOutputConflicts(launchEnv, options.cwd)
   } catch (error) {
     console.warn(
       '[claude-rich-output] Could not inspect existing plugins; keeping the ordinary launch:',

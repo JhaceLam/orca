@@ -154,3 +154,21 @@ describe('opt-in Claude rich output', () => {
     expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe('user-replacement')
   })
 })
+
+it.each([undefined, ''])('keeps the ordinary launch when cwd is unknown (%s)', async (cwd) => {
+  const root = bundle()
+  const userPlugin = join(root, 'user-plugin')
+  const previousOverlay = [userPlugin, join(root, 'reply-markdown')].join(delimiter)
+  const env: Record<string, string> = {
+    CLAUDE_CONFIG_DIR: join(root, 'config'),
+    ORCA_CLAUDE_RICH_OUTPUT: '1',
+    CLAUDE_CODE_PLUGIN_DIRS: previousOverlay,
+    ORCA_CLAUDE_PLUGIN_DIRS: previousOverlay,
+    ORCA_CLAUDE_SOURCE_PLUGIN_DIRS: userPlugin
+  }
+  await apply(env, { ...options, cwd }, [root])
+  expect(env.CLAUDE_CODE_PLUGIN_DIRS).toBe(userPlugin)
+  expect(env.ORCA_CLAUDE_PLUGIN_DIRS).toBeUndefined()
+  expect(env.ORCA_CLAUDE_SOURCE_PLUGIN_DIRS).toBeUndefined()
+  expect(env.ORCA_CLAUDE_RICH_OUTPUT).toBeUndefined()
+})

@@ -26,7 +26,9 @@ export async function withClaudeRichOutputBuildLock(root, action) {
     return result
   } finally {
     if (!compromised) {
-      await release()
+      await release().catch((error) => {
+        console.warn('[claude-rich-output] Could not release build lock:', error)
+      })
     }
   }
 }

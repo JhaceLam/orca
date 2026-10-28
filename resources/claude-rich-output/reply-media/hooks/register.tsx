@@ -4,7 +4,7 @@ import type { EngineInterface, Register, RenderElement } from 'claude-code'
 
 import type { Diagram, Frames } from '../types'
 import { KINDS, forms, hash, splitBlocks, classify } from './blocks'
-import { render, scheduleRender } from './diagrams'
+import { render, renderResumed, scheduleRender } from './diagrams'
 
 // Atom addresses must be file-local for the hook scanner; the renderer uses the same key.
 const diagrams = atom({ plugin: 'reply-media', key: 'diagrams' } as const, {})
@@ -219,13 +219,11 @@ export const register: Register = (on, options) => {
 
       // `slice(-0)` would keep every reply. A session no terminal draws gets none.
       const count = e.surface === 'terminal' ? resumedReplies : 0
-      for (const reply of count > 0 ? replies.slice(-count) : []) {
-        try {
-          await render($, reply.text, drawn, true)
-        } catch (error) {
-          $.ui.toast(`Media preview failed: ${String(error)}`)
-        }
-      }
+      await renderResumed(
+        $,
+        count > 0 ? replies.slice(-count).map((reply) => reply.text) : [],
+        drawn
+      )
     } catch (error) {
       $.ui.toast(`Media preview failed: ${String(error)}`)
     }

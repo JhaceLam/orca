@@ -47,6 +47,8 @@ or re-enable them. Unreadable plugin metadata leaves the ordinary launch intact.
 - Private per-user media cache (POSIX mode 0700), rejecting unsafe existing directories.
 - Atomic, versioned formula cache; coalesced requests; a 30-second render timeout
   with one retry for an aborted process.
+- Resumed previews share one 30-second budget before the first prompt; converters
+  receive the remaining time and unrendered blocks retain their source text.
 - Inline PNG transport for small images and video frames across remote sessions.
 - Native responses are committed before optional preview conversion; mounted rows
   update when the preview is ready.
