@@ -12,9 +12,8 @@ const zoomed = atom({ plugin: 'reply-media', key: 'zoomed' } as const, null)
 const playing = atom({ plugin: 'reply-media', key: 'playing' } as const, null)
 const preparing = atom({ plugin: 'reply-media', key: 'preparing' } as const, null)
 const PANE = 'picture-zoom'
-// Blocks whose swept picture was drawn again since this load: once each, so
-// that a file which cannot be made again is not tried at every draw.
-const redrawn = new Set<string>()
+// A swept preview gets one redraw and one recovery attempt, never a retry on every draw.
+const redrawn = new Map<string, 'attempted' | 'retryable'>()
 // One video plays at a time. Where each one stopped is kept by its block; the
 // drawing reads it when the `playing` value changes.
 // shortcut: kept in the module, so a reload of the mod rewinds every video;
@@ -257,9 +256,12 @@ export const register: Register = (on, options) => {
       // while its picture is drawn again from it.
       if (outcome && !('error' in outcome) && (await isGone($, outcome.file))) {
         outcome = undefined
-        if (!redrawn.has(part)) {
-          redrawn.add(part)
-          scheduleRender($, part, drawn, true)
+        const redraw = redrawn.get(part)
+        if (redraw !== 'attempted') {
+          redrawn.set(part, 'attempted')
+          scheduleRender($, part, drawn, true, () => {
+            redrawn.set(part, redraw === undefined ? 'retryable' : 'attempted')
+          })
         }
       }
 

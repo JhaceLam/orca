@@ -17,12 +17,14 @@ export function scheduleRender(
   $: EngineInterface,
   text: string,
   drawn: ReadonlySet<Script>,
-  isForced = false
+  isForced = false,
+  onFailure?: () => void
 ) {
   $.clock.after(0, async () => {
     try {
       await render($, text, drawn, isForced)
     } catch (error) {
+      onFailure?.()
       $.ui.toast(`Media preview failed: ${String(error)}`)
     }
   })

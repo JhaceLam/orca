@@ -309,7 +309,7 @@
     },
     "terminal": {
       "claudeRichOutput": "Claude Rich Output",
-      "claudeRichOutputDescription": "Experimental NeonCoat Markdown, formulas, diagrams, images and video in new Claude terminals. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.",
+      "claudeRichOutputDescription": "Experimental NeonCoat Markdown and media in new Claude terminals. Enable Inline Images for formulas, diagrams, images and video. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.",
       "optionLayoutAlt": "ABC or U.S. — Option sends Alt/Esc sequences",
       "optionLayoutCompose": "layout uses Option to compose characters like @, €, [, ]",
       "optionLayoutUnknown": "unknown layout — Option composes characters (safe default)",

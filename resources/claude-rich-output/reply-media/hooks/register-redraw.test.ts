@@ -80,3 +80,113 @@ for (const mode of ['swept picture', 'retry button']) {
     expect(toasts[0]).toContain('context metadata unavailable')
   })
 }
+
+for (const failure of ['temporary', 'persistent']) {
+  test(`swept preview retries a ${failure} metadata failure once without a redraw loop`, async ($, on) => {
+    const clock = mock.clock(on)
+    const text = '```math\nx^2\n```'
+    const toasts: string[] = []
+    const drawn: string[] = []
+    let unavailable = false
+    let swept = false
+    let cwdCalls = 0
+    let renders = 0
+    on('session.cwd', () => {
+      cwdCalls++
+      return unavailable ? { deny: 'preview metadata unavailable' } : { value: '/work' }
+    })
+    on('session.surfaces', () => ({ value: ['terminal'] }))
+    on('fs.stat', (_, e) =>
+      swept && e.path === '/tmp/first.png'
+        ? { deny: 'ENOENT: initial preview was swept' }
+        : { value: { kind: 'file' as const, size: 68, mtimeMs: 0, isLink: false } }
+    )
+    on('fs.read', () => ({ value: { base64: PNG } }))
+    on('process.run', () => {
+      const file = ++renders === 1 ? '/tmp/first.png' : '/tmp/recovered.png'
+      return {
+        value: {
+          exitCode: 0,
+          stdout: JSON.stringify({ file, width: 100, height: 40 }),
+          stderr: '',
+          isStdoutTruncated: false,
+          isStderrTruncated: false
+        }
+      }
+    })
+    on('ui.toast', (_, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    on('ui.render', { component: 'AssistantMessage' }, (_, e) => {
+      drawn.push(e.props.text)
+      return { type: 'engine', ref: 0 }
+    })
+    await $.session.append({
+      door: 'response',
+      origin: { kind: 'model', model: 'test' },
+      uuid: `redraw-${failure}`,
+      message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+    })
+    await clock.settle()
+    const mount = () =>
+      $.ui.mount({
+        plugin: 'reply-media',
+        surface: 'terminal',
+        component: 'AssistantMessage',
+        props: { text, isFirstOfReply: true }
+      })
+    const first = await mount()
+    try {
+      expect(await first.find({ type: 'Image' })).toBeDefined()
+    } finally {
+      await first.unmount()
+    }
+    expect(renders).toBe(1)
+    expect(cwdCalls).toBe(1)
+    swept = true
+    unavailable = true
+    const failed = await mount()
+    try {
+      await clock.settle()
+      expect(await failed.find({ type: 'Image' })).toBeUndefined()
+      expect(drawn).toContain(text)
+      expect(toasts).toEqual([expect.stringContaining('preview metadata unavailable')])
+    } finally {
+      await failed.unmount()
+    }
+    unavailable = failure === 'persistent'
+    const recovery = await mount()
+    try {
+      await clock.settle()
+      expect(cwdCalls).toBe(3)
+      if (failure === 'temporary') {
+        expect((await recovery.find({ type: 'Image' }))?.props.source).toEqual({ png: PNG })
+        expect(renders).toBe(2)
+        expect(toasts).toHaveLength(1)
+      } else {
+        expect(await recovery.find({ type: 'Image' })).toBeUndefined()
+        expect(renders).toBe(1)
+        expect(toasts).toHaveLength(2)
+      }
+    } finally {
+      await recovery.unmount()
+    }
+    for (let index = 0; index < 6; index++) {
+      const repainted = await mount()
+      try {
+        await clock.settle()
+        expect(cwdCalls).toBe(3)
+        if (failure === 'persistent') {
+          expect(await repainted.find({ type: 'Image' })).toBeUndefined()
+        } else {
+          expect(await repainted.find({ type: 'Image' })).toBeDefined()
+        }
+      } finally {
+        await repainted.unmount()
+      }
+    }
+    expect(renders).toBe(failure === 'temporary' ? 2 : 1)
+    expect(toasts).toHaveLength(failure === 'temporary' ? 1 : 2)
+  })
+}

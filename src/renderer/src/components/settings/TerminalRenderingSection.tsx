@@ -143,7 +143,7 @@ export function TerminalRenderingSection({
           title={translate('settings.terminal.claudeRichOutput', 'Claude Rich Output')}
           description={translate(
             'settings.terminal.claudeRichOutputDescription',
-            'Experimental NeonCoat Markdown, formulas, diagrams, images and video in new Claude terminals. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.'
+            'Experimental NeonCoat Markdown and media in new Claude terminals. Enable Inline Images for formulas, diagrams, images and video. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.'
           )}
           keywords={['claude', 'neoncoat', 'markdown', 'math', 'formulas', 'mermaid', 'media']}
           className="py-2"
@@ -152,7 +152,7 @@ export function TerminalRenderingSection({
             label={translate('settings.terminal.claudeRichOutput', 'Claude Rich Output')}
             description={translate(
               'settings.terminal.claudeRichOutputDescription',
-              'Experimental NeonCoat Markdown, formulas, diagrams, images and video in new Claude terminals. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.'
+              'Experimental NeonCoat Markdown and media in new Claude terminals. Enable Inline Images for formulas, diagrams, images and video. Requires a compatible Claude CLI, Node 24, librsvg and ffmpeg on the execution host. Existing sessions are unchanged.'
             )}
             checked={settings.claudeRichOutput === true}
             onChange={() => updateSettings({ claudeRichOutput: !settings.claudeRichOutput })}
