@@ -121,6 +121,9 @@ describe('listChangedFiles with real Git', () => {
       vi.stubEnv('GIT_CONFIG_GLOBAL', config)
       vi.stubEnv('GIT_CONFIG_SYSTEM', config)
       vi.stubEnv('GIT_CONFIG_NOSYSTEM', '1')
+      vi.stubEnv('HOME', root)
+      vi.stubEnv('USERPROFILE', root)
+      vi.stubEnv('XDG_CONFIG_HOME', root)
       vi.stubEnv('GITHUB_EVENT_NAME', undefined)
       vi.stubEnv('ORCA_FLAKY_TEST_RATCHET_ALL', undefined)
       const git = (...args) => {
