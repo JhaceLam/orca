@@ -107,6 +107,44 @@ for (const sample of [
     source: 'flowchart LR\nA --> B'
   },
   { name: 'formula', block: '```math\nx^2\n```', script: 'math.mjs', source: 'x^2' },
+  { name: 'image', block: '![kept](kept.png)', script: 'picture.mjs', source: 'kept.png' }
+]) {
+  test(`inline backticks preserve the next ${sample.name}`, async ($, on) => {
+    const { clock, converted, drawn } = mediaScenario(on)
+    const prose = '```npm install``` then run setup.'
+    const text = `${prose}\n\n${sample.block}\n\nAfter`
+    const stored = await $.session.append({
+      door: 'response',
+      origin: { kind: 'model', model: 'test' },
+      uuid: `inline-backticks-${sample.name}`,
+      message: { type: 'assistant', role: 'assistant', content: [{ type: 'text', text }] }
+    })
+    await clock.settle()
+    expect(stored.message?.content?.[0]?.text).toBe(text)
+    expect(converted).toEqual([[sample.script, sample.source]])
+    const ui = await $.ui.mount({
+      plugin: 'reply-media',
+      surface: 'terminal',
+      component: 'AssistantMessage',
+      props: { text, isFirstOfReply: true }
+    })
+    try {
+      expect((await ui.find({ type: 'Image' }))?.props.alt).toBe(sample.source)
+      expect(drawn).toEqual([prose, 'After'])
+    } finally {
+      await ui.unmount()
+    }
+  })
+}
+
+for (const sample of [
+  {
+    name: 'diagram',
+    block: '```mermaid\nflowchart LR\nA --> B\n```',
+    script: 'render.mjs',
+    source: 'flowchart LR\nA --> B'
+  },
+  { name: 'formula', block: '```math\nx^2\n```', script: 'math.mjs', source: 'x^2' },
   { name: 'local image', block: '![kept](kept.png)', script: 'picture.mjs', source: 'kept.png' }
 ]) {
   test(`an unclosed dollar delimiter preserves prose and the next ${sample.name}`, async ($, on) => {

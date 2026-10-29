@@ -1,5 +1,28 @@
 import { expect, test } from 'claude-code/testing'
 
+test('an inline triple-backtick span does not hide the next heading or code card', async ($, on) => {
+  const drawn: string[] = []
+  const prose = '```npm install``` then run setup.'
+  on('settings.read', () => ({ value: {} }))
+  on('ui.render', { component: 'AssistantMessage' }, (_, e) => {
+    drawn.push(e.props.text)
+    return { type: 'engine', ref: 0 }
+  })
+  const ui = await $.ui.mount({
+    plugin: 'reply-markdown',
+    surface: 'terminal',
+    component: 'AssistantMessage',
+    props: { text: `${prose}\n\n## After\n\n\`\`\`text\nkept-source\n\`\`\``, isFirstOfReply: true }
+  })
+  try {
+    expect(drawn).toEqual([prose])
+    expect((await ui.find({ type: 'Text', text: /\bAfter$/ }))?.props.bold).toBe(true)
+    expect((await ui.find({ type: 'Code' }))?.props.source).toBe('kept-source')
+  } finally {
+    await ui.unmount()
+  }
+})
+
 for (const [name, fence] of [
   ['mermaid', '```mermaid\nflowchart LR\n  A["~~literal~~"] --> B\n```'],
   ['math', '```math\n\\text{~~literal~~}\n```'],

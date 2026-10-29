@@ -20,7 +20,7 @@ export type Block = { hasGapAbove: boolean } & (
 )
 type Align = 'flex-start' | 'center' | 'flex-end'
 
-export const FENCE = /^\s*(`{3,}|~{3,})/
+export const FENCE = /^\s*(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})/
 // The fences the reply-media mod draws as pictures: left as text, so that it
 // gets them whichever of the two mods sits above the other. It reads fences of
 // three backticks only; a `~~~` or longer one is code here.

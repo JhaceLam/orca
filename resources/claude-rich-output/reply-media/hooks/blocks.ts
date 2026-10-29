@@ -60,7 +60,7 @@ export const hash = (text: string) =>
     [...text].reduce((sum, char) => (Math.imul(sum, 31) + char.charCodeAt(0)) | 0, 0) >>> 0
   ).toString(36)
 
-const FENCE = /^([ \t]*)(`{3,}|~{3,})([^\n]*)$/
+const FENCE = /^([ \t]*)(`{3,}(?=[^`\n]*$)|~{3,})([^\n]*)$/
 const FORMULA = /^\$\$[ \t\r]*$/
 const IMAGE = /^!\[[^\]\n]*\]\([^)\n]+\)[ \t\r]*$/
 
