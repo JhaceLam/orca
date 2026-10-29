@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { runProcess } from '@orca/process-host'
 import ts from 'typescript-api'
-import { expect, it } from 'vitest'
+import { expect, it, onTestFinished } from 'vitest'
 import { discoverUnitFiles } from './ci-unit-files.mjs'
 import { getNodeRuntimeInclude } from './vitest-node-runtime-files.mjs'
 import { importsSqliteRuntime } from './vitest-sqlite-runtime-scan.mjs'
@@ -109,36 +109,41 @@ it.each([
   }
 ])('collects $fixture exactly once in the Node project', async ({ file, pattern }) => {
   const directory = mkdtempSync(join(tmpdir(), 'orca-runtime-list-'))
-  try {
-    const output = join(directory, 'files.json')
-    const result = await runProcess({
-      program: process.execPath,
-      args: [
-        'config/scripts/run-vitest.mjs',
-        'list',
-        '--config',
-        'config/vitest.config.ts',
-        file,
-        '--filesOnly',
-        `--json=${output}`
-      ],
-      cwd: process.cwd(),
-      env: { ...process.env, ORCA_BALANCE_UNIT_SHARDS: '0' },
-      timeoutMs: 20_000,
-      detached: true,
-      terminationBarrier: true
+  const output = join(directory, 'files.json')
+  const collecting = runProcess({
+    program: process.execPath,
+    args: [
+      'config/scripts/run-vitest.mjs',
+      'list',
+      '--config',
+      'config/vitest.config.ts',
+      file,
+      '--filesOnly',
+      `--json=${output}`
+    ],
+    cwd: process.cwd(),
+    env: { ...process.env, ORCA_BALANCE_UNIT_SHARDS: '0' },
+    timeoutMs: 20_000,
+    detached: true,
+    terminationBarrier: true
+  })
+  // Join the barrier even when its final verification outlives the test body.
+  onTestFinished(async () => {
+    try {
+      await collecting
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+  const result = await collecting
+  expect(result.code, result.stderr).toBe(0)
+  const collected: unknown = JSON.parse(readFileSync(output, 'utf8'))
+  expect(collected).toEqual([
+    expect.objectContaining({
+      file: expect.stringMatching(pattern),
+      projectName: 'node-runtime'
     })
-    expect(result.code, result.stderr).toBe(0)
-    const collected: unknown = JSON.parse(readFileSync(output, 'utf8'))
-    expect(collected).toEqual([
-      expect.objectContaining({
-        file: expect.stringMatching(pattern),
-        projectName: 'node-runtime'
-      })
-    ])
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
+  ])
 })
 
 it.each([

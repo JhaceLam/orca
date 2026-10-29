@@ -122,10 +122,16 @@ describe.skipIf(process.platform === 'win32')(
     const stopMutations = async (): Promise<void> => {
       const results = await Promise.allSettled(
         runs.splice(0).map(async (tracked) => {
-          try {
-            const groupFile = join(base, 'orcad-state-mutation.lock', 'pgid')
+          const groupFile = join(base, 'orcad-state-mutation.lock', 'pgid')
+          const terminateMutationGroup = (): void => {
             if (!tracked.group && existsSync(groupFile)) {
-              tracked.group = Number(readFileSync(groupFile, 'utf8').trim())
+              try {
+                tracked.group = Number(readFileSync(groupFile, 'utf8').trim())
+              } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+                  throw error
+                }
+              }
             }
             if (tracked.group > 1) {
               expect(tracked.group).not.toBe(ownGroup)
@@ -138,11 +144,24 @@ describe.skipIf(process.platform === 'win32')(
                   }
                 }
               }
+            }
+          }
+          try {
+            terminateMutationGroup()
+            if (tracked.group > 1) {
               await expect.poll(() => groupHasWork(tracked.group), { timeout: 5_000 }).toBe(false)
             }
           } finally {
             await forceTerminateProcessTree(tracked.run)
-            await expect.poll(() => tracked.closed, { timeout: 5_000 }).toBe(true)
+            await expect
+              .poll(
+                () => {
+                  terminateMutationGroup()
+                  return tracked.closed && (tracked.group <= 1 || !groupHasWork(tracked.group))
+                },
+                { timeout: 5_000 }
+              )
+              .toBe(true)
             await tracked.close
             if (tracked.run.pid) {
               expect(groupHasWork(tracked.run.pid)).toBe(false)
@@ -277,6 +296,42 @@ describe.skipIf(process.platform === 'win32')(
       expect(groupHasWork(group)).toBe(false)
       expect(closed).toBe(true)
       expect(existsSync(base)).toBe(true)
+    }, 20_000)
+
+    // Gated process-group startup and child close need this process deadline.
+    it('joins a mutation group published after its outer shell exits', async () => {
+      const bin = join(base, 'bin')
+      const waiting = join(base, 'group-waiting')
+      const gate = join(base, 'publish-group')
+      const groupFile = join(base, 'orcad-state-mutation.lock', 'pgid')
+      mkdirSync(bin)
+      writeFileSync(
+        join(bin, 'sh'),
+        `#!/bin/sh\nprintf '%s' "$$" > '${waiting}'\n` +
+          `while [ ! -f '${gate}' ]; do sleep 0.01; done\nexec /bin/sh "$@"\n`,
+        { mode: 0o700 }
+      )
+      const { run, started } = startMutation('sleep 30', `PATH='${bin}':"$PATH"; export PATH; `)
+      void started.catch(() => {})
+      let group = 0
+      try {
+        await expect.poll(() => existsSync(waiting)).toBe(true)
+        group = Number(await sh(posixProcessGroupCommand(readFileSync(waiting, 'utf8').trim())))
+        expect(group).toBeGreaterThan(1)
+        expect(group).not.toBe(ownGroup)
+        expect(existsSync(groupFile)).toBe(false)
+        run.once('exit', () => writeFileSync(gate, 'publish'))
+
+        await stopMutations()
+        expect(existsSync(groupFile)).toBe(true)
+        expect(groupHasWork(group)).toBe(false)
+        expect(existsSync(base)).toBe(true)
+      } finally {
+        if (group > 1 && group !== ownGroup && groupHasWork(group)) {
+          process.kill(-group, 'SIGKILL')
+        }
+        await forceTerminateProcessTree(run)
+      }
     }, 20_000)
 
     // Real zombie observation and child close need this process deadline.
