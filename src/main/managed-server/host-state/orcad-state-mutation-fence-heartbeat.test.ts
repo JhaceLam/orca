@@ -314,9 +314,22 @@ describe.skipIf(process.platform === 'win32')(
       const { run, started } = startMutation('sleep 30', `PATH='${bin}':"$PATH"; export PATH; `)
       void started.catch(() => {})
       let group = 0
+      let waitingPid = ''
       try {
-        await expect.poll(() => existsSync(waiting)).toBe(true)
-        group = Number(await sh(posixProcessGroupCommand(readFileSync(waiting, 'utf8').trim())))
+        await expect
+          .poll(
+            () => {
+              const pid = existsSync(waiting) ? readFileSync(waiting, 'utf8').trim() : ''
+              if (!/^[1-9]\d*$/.test(pid) || Number(pid) <= 1) {
+                return false
+              }
+              waitingPid = pid
+              return true
+            },
+            { timeout: 1_000 }
+          )
+          .toBe(true)
+        group = Number(await sh(posixProcessGroupCommand(waitingPid)))
         expect(group).toBeGreaterThan(1)
         expect(group).not.toBe(ownGroup)
         expect(existsSync(groupFile)).toBe(false)
