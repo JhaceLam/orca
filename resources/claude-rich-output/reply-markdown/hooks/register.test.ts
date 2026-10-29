@@ -564,3 +564,208 @@ test('a trailing unmatched $$ keeps earlier complete formulas whole and later bl
     await ui.unmount()
   }
 })
+
+for (const tableBorder of ['rules', 'round', 'single', 'bold']) {
+  test(
+    `a ${tableBorder} table copies its Markdown without surrounding prose`,
+    { options: { tableBorder } },
+    async ($, on) => {
+      const source =
+        '| 名称 | Note |\n| :--- | ---: |\n| `a\\|b` | **bold** and [link](https://example.com) |\n| c | ~~old~~ |'
+      const copied: { text: string; surface: RenderSurface | undefined }[] = []
+      const toasts: string[] = []
+      on('ui.copy', (_, e) => {
+        copied.push({ text: e.text, surface: e.surface })
+        return { value: { isCopied: true as const } }
+      })
+      on('ui.toast', (_, e) => {
+        toasts.push(e.text)
+        return { value: undefined }
+      })
+      const drawn = engine(on)
+      const ui = await mount($, `Before\n\n${source}\n\nAfter`)
+      const buttons = await ui.findAll({ type: 'Button' })
+
+      expect(buttons).toHaveLength(1)
+      expect(buttons[0]?.props.label).toBe('copy')
+      await ui.press({ key: String(buttons[0]?.props.key) })
+      expect(copied).toEqual([{ text: source, surface: 'terminal' }])
+      expect(toasts).toEqual(['Copied'])
+      expect(drawn).toEqual(['Before', 'After'])
+      await ui.unmount()
+    }
+  )
+}
+
+test('a table too wide to restyle still has a working copy button', async ($, on) => {
+  const source = '| one | two | three | four |\n| - | - | - | - |\n| 1 | 2 | 3 | 4 |'
+  const copied: string[] = []
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  const drawn = engine(on, { maxProseWidth: 20 })
+  const ui = await mount($, `# Title\n\n${source}`)
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(drawn).toEqual([source])
+  expect(buttons).toHaveLength(1)
+  expect(buttons[0]?.props.label).toBe('copy')
+  await ui.press({ key: String(buttons[0]?.props.key) })
+  expect(copied).toEqual([source])
+  await ui.unmount()
+})
+
+test('table and code buttons copy their own sources across repeated blocks', async ($, on) => {
+  const first = '| A | B |\n| - | - |\n| 1 | 2 |'
+  const second = '| C | D |\n| - | - |\n| 3 | 4 |'
+  const copied: string[] = []
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  engine(on)
+  const ui = await mount($, `${first}\n\n\`\`\`sh\necho hello\n\`\`\`\n\n${second}\n\n${first}`)
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(buttons.map((button) => button.props.label)).toEqual(['copy', 'copy', 'copy', 'copy'])
+  for (const button of buttons) {
+    await ui.press({ key: String(button.props.key) })
+  }
+  expect(copied).toEqual([first, 'echo hello', second, first])
+  await ui.unmount()
+})
+
+test('a failed table copy reports the clipboard failure', async ($, on) => {
+  const toasts: string[] = []
+  on('ui.copy', () => ({ value: { isCopied: false as const, reason: 'no-clipboard' as const } }))
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  engine(on)
+  const ui = await mount($, TABLE)
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(buttons).toHaveLength(1)
+  await ui.press({ key: String(buttons[0]?.props.key) })
+  expect(toasts).toEqual(['Not copied: no-clipboard'])
+  await ui.unmount()
+})
+
+test(
+  'tables switched off do not gain a copy control',
+  { options: { tables: false } },
+  async ($, on) => {
+    const drawn = engine(on)
+    const ui = await mount($, TABLE)
+
+    expect(drawn).toEqual([TABLE])
+    expect(await ui.findAll({ type: 'Button' })).toEqual([])
+    await ui.unmount()
+  }
+)
+
+for (const kind of ['NOTE', 'TIP', 'IMPORTANT', 'WARNING', 'CAUTION']) {
+  test(`a ${kind} callout copies its complete Markdown without surrounding prose`, async ($, on) => {
+    const source = `> [!${kind}]\n> 第一行 **bold** and \`code\`.\n> \n> Keep [the link](https://example.com) and ~~old text~~.`
+    const copied: { text: string; surface: RenderSurface | undefined }[] = []
+    const toasts: string[] = []
+    on('ui.copy', (_, e) => {
+      copied.push({ text: e.text, surface: e.surface })
+      return { value: { isCopied: true as const } }
+    })
+    on('ui.toast', (_, e) => {
+      toasts.push(e.text)
+      return { value: undefined }
+    })
+    const drawn = engine(on)
+    const ui = await mount($, `Before\n\n${source}\n\nAfter`)
+    const buttons = await ui.findAll({ type: 'Button' })
+
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0]?.props).toMatchObject({ label: 'copy', plain: true, dimColor: true })
+    await ui.press({ key: String(buttons[0]?.props.key) })
+    expect(copied).toEqual([{ text: source, surface: 'terminal' }])
+    expect(toasts).toEqual(['Copied'])
+    expect(drawn).toEqual(['Before', 'After'])
+    expect((await ui.find({ type: 'Text', text: /^old text$/ }))?.props.strikethrough).toBe(true)
+    await ui.unmount()
+  })
+}
+
+test('repeated callouts, a table and a code card each copy their own block', async ($, on) => {
+  const first = '> [!NOTE]\n> First note.'
+  const second = '> [!WARNING]\n> Second note.'
+  const copied: string[] = []
+  on('ui.copy', (_, e) => {
+    copied.push(e.text)
+    return { value: { isCopied: true as const } }
+  })
+  on('ui.toast', () => ({ value: undefined }))
+  engine(on)
+  const ui = await mount(
+    $,
+    `${first}\n\n${TABLE}\n\n${second}\n\n\`\`\`sh\necho hello\n\`\`\`\n\n${first}`
+  )
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(buttons).toHaveLength(5)
+  expect(new Set(buttons.map((button) => button.props.key)).size).toBe(5)
+  expect(buttons.map((button) => button.props.label)).toEqual([
+    'copy',
+    'copy',
+    'copy',
+    'copy',
+    'copy'
+  ])
+  for (const button of buttons) {
+    await ui.press({ key: String(button.props.key) })
+  }
+  expect(copied).toEqual([first, TABLE, second, 'echo hello', first])
+  await ui.unmount()
+})
+
+test(
+  'callouts switched off keep the quote without a copy control',
+  { options: { callouts: false } },
+  async ($, on) => {
+    const source = '> [!NOTE]\n> An ordinary engine quote.'
+    const drawn = engine(on)
+    const ui = await mount($, source)
+
+    expect(drawn).toEqual([source])
+    expect(await ui.findAll({ type: 'Button' })).toEqual([])
+    await ui.unmount()
+  }
+)
+
+test('a narrow callout retains its complete body and reports a failed copy', async ($, on) => {
+  const toasts: string[] = []
+  const source = '> [!IMPORTANT]\n> Long card text with 中文内容 and `code`.'
+  on('ui.copy', () => ({ value: { isCopied: false as const, reason: 'no-clipboard' as const } }))
+  on('ui.toast', (_, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  engine(on, { maxProseWidth: 14 })
+  const ui = await $.ui.mount({
+    plugin: 'reply-markdown',
+    surface: 'terminal',
+    component: 'AssistantMessage',
+    viewport: { columns: 20, rows: 24 },
+    props: { text: source, isFirstOfReply: true }
+  })
+  const buttons = await ui.findAll({ type: 'Button' })
+
+  expect(buttons).toHaveLength(1)
+  expect((await ui.find({ type: 'Text', text: 'Important' }))?.props.bold).toBe(true)
+  expect((await ui.find({ type: 'Markdown' }))?.props.text).toBe(
+    'Long card text with 中文内容 and `code`.'
+  )
+  await ui.press({ key: String(buttons[0]?.props.key) })
+  expect(toasts).toEqual(['Not copied: no-clipboard'])
+  await ui.unmount()
+})

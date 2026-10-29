@@ -182,6 +182,18 @@ export const register: Register = (on, options) => {
         <Markdown text={text} dimColor={dimColor} />
       )
     }
+    const copyButton = (source: string, key: string) => (
+      <Button
+        key={key}
+        label="copy"
+        plain
+        dimColor
+        onPress={async (press) => {
+          const copied = await $.ui.copy({ text: source, surface: press.surface })
+          $.ui.toast(copied.isCopied ? 'Copied' : `Not copied: ${copied.reason}`)
+        }}
+      />
+    )
     // The engine wraps its own prose at the `maxProseWidth` setting; the mod's
     // blocks keep to the same width.
     const { maxProseWidth } = await $.settings.read()
@@ -221,24 +233,23 @@ export const register: Register = (on, options) => {
           >
             <Box flexDirection="row" justifyContent="space-between">
               <Text dimColor>{block.language || 'text'}</Text>
-              <Button
-                key={`copy:${hash(source)}`}
-                label="copy"
-                plain
-                dimColor
-                onPress={async (press) => {
-                  const copied = await $.ui.copy({ text: source, surface: press.surface })
-                  $.ui.toast(copied.isCopied ? 'Copied' : `Not copied: ${copied.reason}`)
-                }}
-              />
+              {copyButton(source, `copy:${hash(source)}`)}
             </Box>
             <Code source={source} language={block.language || undefined} />
           </Box>
         )
       } else if (block.kind === 'table') {
+        const tableCopy = copyButton(block.source, `copy-table:${hash(text)}:${index}`)
         const widths = fit(block, columns)
         if (widths === undefined) {
-          rows.push(await unstyled(block.source))
+          rows.push(
+            <Box flexDirection="column" marginTop={marginTop}>
+              <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+                {tableCopy}
+              </Box>
+              {await unstyled(block.source)}
+            </Box>
+          )
           continue
         }
 
@@ -295,6 +306,9 @@ export const register: Register = (on, options) => {
         const body = block.rows.map((texts) => row(texts, false))
         rows.push(
           <Box flexDirection="column" marginTop={marginTop}>
+            <Box flexDirection="row" justifyContent="flex-end" width={total}>
+              {tableCopy}
+            </Box>
             {frame
               ? [
                   edge(frame.edges[0], frame.line),
@@ -342,18 +356,22 @@ export const register: Register = (on, options) => {
         const { label = name, color } = CALLOUT[name.toUpperCase()] ?? {}
         const body = block.text.slice(marker.length)
         rows.push(
-          <Box
-            flexDirection="column"
-            marginTop={marginTop}
-            paddingX={1}
-            width={columns}
-            borderStyle={cardBorder}
-            borderColor={color}
-          >
-            <Text bold color={color}>
-              {label}
-            </Text>
-            {body.trim() !== '' && prose(body)}
+          <Box flexDirection="column" marginTop={marginTop}>
+            <Box flexDirection="row" justifyContent="flex-end" width={columns}>
+              {copyButton(markdownOf(block), `copy-callout:${hash(text)}:${index}`)}
+            </Box>
+            <Box
+              flexDirection="column"
+              paddingX={1}
+              width={columns}
+              borderStyle={cardBorder}
+              borderColor={color}
+            >
+              <Text bold color={color}>
+                {label}
+              </Text>
+              {body.trim() !== '' && prose(body)}
+            </Box>
           </Box>
         )
       } else if (block.kind === 'quote') {

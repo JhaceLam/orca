@@ -55,6 +55,8 @@ or re-enable them. Unreadable plugin metadata leaves the ordinary launch intact.
 - Asynchronous video loading with cancellation and visible retry states.
 - Non-macOS conversion through ffmpeg; no unconditional macOS viewer command.
 - Literal code fences remain literal, including backticks and bold markers.
+- Tables and GitHub alert callouts have a `copy` button above the content, matching
+  code cards. Tables and callouts copy their Markdown; code cards copy the code.
 
 These sources are separate from Orca's generic terminal image implementation.
 Image eviction/replay recovery is addressed independently. Disk caches are

@@ -159,7 +159,7 @@ for (const fence of ['```', '````', '~~~']) {
 for (const [name, text, deleted] of [
   ['before', '~~old~~ text\n\n$$\na = b', 'old'],
   ['after', '$$\na = b\n~~after~~', 'after']
-]) {
+] as const) {
   test(`deletion ${name} an unmatched formula is styled in the real renderer`, async ($, on) => {
     on('settings.read', () => ({ value: {} }))
     const ui = await $.ui.mount({
