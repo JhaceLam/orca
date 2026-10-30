@@ -21,10 +21,10 @@ export type GlobalSettingsBase = ClaudeAgentViewSettings &
   AgentPermissionGlobalSettings &
   ExternalConversationSettings &
   BrowserLinkOpeningSettings &
-  ClaudeRichOutputSettings &
   OrchestrationHeartbeatSettings &
   BrowserExtensionGlobalSettings &
   PluginAppearanceSettings &
   PluginFileTypeSuggestionSettings &
   PluginUpdatePolicySettings &
-  PluginSystemSettings
+  PluginSystemSettings &
+  ClaudeRichOutputSettings
