@@ -30,13 +30,10 @@ const UNSUPPORTED_TUI_AGENT_ARGS: Partial<Record<TuiAgent, readonly string[]>> =
 export type AgentLaunchProfileSettings = Partial<
   Pick<
     GlobalSettings,
-    | 'agentDefaultArgs'
-    | 'agentDefaultEnv'
-    | 'agentPermissionDefault'
-    | 'agentPermissionOverrides'
-    | 'claudeRichOutput'
+    'agentDefaultArgs' | 'agentDefaultEnv' | 'agentPermissionDefault' | 'agentPermissionOverrides'
   >
->
+> &
+  Partial<Pick<GlobalSettings, 'claudeRichOutput'>>
 
 /** Launch intent overrides only Orca's injected permission, preserving the user's args and env. */
 export function agentLaunchPermissionSettings<T extends AgentLaunchProfileSettings>(
